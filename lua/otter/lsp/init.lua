@@ -218,7 +218,7 @@ otterls.start = function(main_nr, completion)
       }
       return members
     end,
-    init_options = {}
+    init_options = {},
     ---@param params lsp.ConfigurationParams
     ---@param config table
     before_init = function(params, config)
