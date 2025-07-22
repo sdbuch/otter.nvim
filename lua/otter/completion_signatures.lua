@@ -39,6 +39,97 @@ local function close_popup()
   current_popup.last_item = nil
 end
 
+-- Helper function to create positioned popup with smart placement
+local function create_positioned_popup(contents, title, main_buf, completion_item, is_signature)
+  -- Close any existing popup first
+  close_popup()
+  
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents)
+  vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
+  vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+
+  -- Get current window and cursor position for smarter positioning
+  local win = vim.api.nvim_get_current_win()
+  local cursor_pos = vim.api.nvim_win_get_cursor(win)
+  local win_width = vim.api.nvim_win_get_width(win)
+  local win_height = vim.api.nvim_win_get_height(win)
+  
+  -- Calculate popup dimensions
+  local popup_width = math.min(60, math.max(25, string.len(title) + 10))
+  local popup_height = math.min(8, #contents)
+  
+  -- Smart positioning to avoid overlap with completion menu
+  -- Try different positions: right of cursor, below cursor, above cursor, left of cursor
+  local positions = {
+    -- Right of cursor (preferred)
+    { row = -1, col = 15, anchor = 'NW' },
+    -- Below and right
+    { row = 1, col = 10, anchor = 'NW' },
+    -- Above and right  
+    { row = -popup_height - 1, col = 10, anchor = 'NW' },
+    -- Far right
+    { row = 0, col = 30, anchor = 'NW' },
+  }
+  
+  local win_opts = {
+    relative = 'cursor',
+    width = popup_width,
+    height = popup_height,
+    style = 'minimal',
+    border = 'rounded',
+    title = is_signature and ' Signature ' or ' Preview ',
+    title_pos = 'center',
+    zindex = 1000, -- High z-index to appear above other popups
+  }
+  
+  -- Try each position until we find one that fits
+  local chosen_pos = positions[1] -- Default to first position
+  for _, pos in ipairs(positions) do
+    -- Simple check: if position is reasonable, use it
+    if pos.col + popup_width < win_width - 5 then
+      chosen_pos = pos
+      break
+    end
+  end
+  
+  win_opts.row = chosen_pos.row
+  win_opts.col = chosen_pos.col
+  win_opts.anchor = chosen_pos.anchor
+  
+  debug_print("Creating popup at position:", chosen_pos.row, chosen_pos.col)
+  
+  local popup_win = vim.api.nvim_open_win(buf, false, win_opts)
+  vim.api.nvim_win_set_option(popup_win, 'wrap', true)
+  vim.api.nvim_win_set_option(popup_win, 'linebreak', true)
+  
+  -- Store popup info
+  current_popup.win = popup_win
+  current_popup.buf = buf
+  current_popup.last_item = completion_item
+  
+  debug_print("Signature popup created successfully at:", chosen_pos.row, chosen_pos.col)
+  
+  -- Improved auto-close behavior
+  local close_events = {'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave', 'CompleteDone'}
+  vim.api.nvim_create_autocmd(close_events, {
+    buffer = main_buf,
+    once = true,
+    callback = function()
+      debug_print("Auto-closing popup due to event")
+      close_popup()
+    end
+  })
+  
+  -- Also close after a reasonable timeout
+  vim.defer_fn(function()
+    if current_popup.win and vim.api.nvim_win_is_valid(current_popup.win) then
+      debug_print("Auto-closing popup due to timeout")
+      close_popup()
+    end
+  end, 5000) -- 5 seconds
+end
+
 -- Create signature popup for completion item
 local function create_signature_popup(completion_item, main_buf)
   debug_print("=== CREATE SIGNATURE POPUP ===")
@@ -54,6 +145,9 @@ local function create_signature_popup(completion_item, main_buf)
   end
 
   debug_print("Item is function-like, proceeding...")
+
+  -- Close any existing popup first to prevent overlaps
+  close_popup()
 
   -- Check if we're in an otter context
   local lang = keeper.get_current_language_context(main_buf)
@@ -142,51 +236,14 @@ local function create_signature_popup(completion_item, main_buf)
         "Try typing `" .. function_name .. "(` for full signature help"
       }
       
-      local buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents)
-      vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
-      vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
-
-      local win_opts = {
-        relative = 'cursor',
-        width = math.min(50, math.max(20, string.len(function_name) + 10)),
-        height = #contents,
-        row = 0,
-        col = 25,
-        style = 'minimal',
-        border = 'rounded',
-        title = ' Preview ',
-        title_pos = 'center'
-      }
-
-      local win = vim.api.nvim_open_win(buf, false, win_opts)
-      vim.api.nvim_win_set_option(win, 'wrap', true)
-      
-      current_popup.win = win
-      current_popup.buf = buf
-      current_popup.last_item = completion_item
-      
-      debug_print("Created fallback popup for:", function_name)
-      
-      -- Auto-close
-      vim.api.nvim_create_autocmd({'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave'}, {
-        buffer = main_buf,
-        once = true,
-        callback = function()
-          debug_print("Auto-closing fallback popup")
-          close_popup()
-        end
-      })
-      
+      -- Create the popup with smarter positioning
+      create_positioned_popup(contents, function_name, main_buf, completion_item)
       return
     end
 
     debug_print("Got", #result.signatures, "signatures")
 
-    -- Close any existing popup
-    close_popup()
-
-    -- Create signature popup
+    -- Create signature popup with real signature data
     local signature = result.signatures[1]
     local contents = { signature.label }
     
@@ -202,46 +259,8 @@ local function create_signature_popup(completion_item, main_buf)
       end
     end
 
-    -- Create floating window positioned next to completion menu
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents)
-    vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
-    vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
-
-    -- Position popup to the right of completion menu
-    local win_opts = {
-      relative = 'cursor',
-      width = math.min(60, math.max(20, string.len(signature.label) + 4)),
-      height = math.min(10, #contents),
-      row = 0,
-      col = 25, -- Offset to avoid overlap with completion menu
-      style = 'minimal',
-      border = 'rounded',
-      title = ' Signature ',
-      title_pos = 'center'
-    }
-
-    debug_print("Creating floating window...")
-    local win = vim.api.nvim_open_win(buf, false, win_opts)
-    vim.api.nvim_win_set_option(win, 'wrap', true)
-    vim.api.nvim_win_set_option(win, 'linebreak', true)
-
-    -- Store popup info
-    current_popup.win = win
-    current_popup.buf = buf
-    current_popup.last_item = completion_item
-
-    debug_print("Signature popup created successfully!")
-
-    -- Auto-close on various events
-    vim.api.nvim_create_autocmd({'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave'}, {
-      buffer = main_buf,
-      once = true,
-      callback = function()
-        debug_print("Auto-closing popup due to event")
-        close_popup()
-      end
-    })
+    -- Create the popup with smarter positioning
+    create_positioned_popup(contents, completion_item.label, main_buf, completion_item, true)
   end)
 end
 
