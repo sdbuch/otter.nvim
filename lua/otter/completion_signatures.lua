@@ -12,9 +12,9 @@ local current_popup = {
   last_item = nil,
 }
 
--- Throttling for performance
-local last_request_time = 0
-local REQUEST_THROTTLE_MS = 200
+-- Throttling for performance (separate from signature help throttling)
+local last_completion_request_time = 0
+local COMPLETION_REQUEST_THROTTLE_MS = 300
 
 -- Debug flag
 local DEBUG = true
@@ -70,29 +70,51 @@ local function create_signature_popup(completion_item, main_buf)
 
   debug_print("Otter buffer:", otter_nr)
 
-  -- Throttle requests for performance
+  -- Separate throttle for completion signatures to avoid conflicts
   local now = vim.fn.reltimestr(vim.fn.reltime())
   local current_time = tonumber(now) * 1000
-  if current_time - last_request_time < REQUEST_THROTTLE_MS then
-    debug_print("Throttling request, too soon")
+  if current_time - last_completion_request_time < COMPLETION_REQUEST_THROTTLE_MS then
+    debug_print("Throttling completion signature request, too soon")
     return
   end
-  last_request_time = current_time
+  last_completion_request_time = current_time
 
-  -- Create position params for signature help request
-  local pos = vim.api.nvim_win_get_cursor(0)
-  local params = vim.lsp.util.make_position_params(0)
+  -- Use completion item position if available, otherwise use cursor position
+  local params
+  if completion_item.data and completion_item.data.position then
+    debug_print("Using completion item position:", vim.inspect(completion_item.data.position))
+    params = {
+      textDocument = { 
+        uri = completion_item.data.uri or completion_item.textDocument.uri 
+      },
+      position = completion_item.data.position
+    }
+  else
+    debug_print("Using cursor position for signature help")
+    params = vim.lsp.util.make_position_params(0)
+    -- Use the otter buffer URI instead of main buffer
+    params.textDocument.uri = keeper.rafts[main_buf].buffers[lang] and 
+                              vim.uri_from_bufnr(keeper.rafts[main_buf].buffers[lang]) or 
+                              params.textDocument.uri
+  end
   
   -- Add completion item context
   params.context = {
     triggerKind = 1, -- Manual/Invoked
     isRetrigger = false,
-    completionItem = completion_item
+    completionItem = {
+      label = completion_item.label,
+      kind = completion_item.kind,
+      detail = completion_item.detail,
+      data = completion_item.data
+    }
   }
 
-  debug_print("Making signature help request to otter buffer...")
+  debug_print("Making signature help request with params:")
+  debug_print("  URI:", params.textDocument.uri)
+  debug_print("  Position:", vim.inspect(params.position))
 
-  -- Make signature help request to otter buffer
+  -- Make signature help request to otter buffer directly
   vim.lsp.buf_request(otter_nr, 'textDocument/signatureHelp', params, function(err, result, ctx)
     debug_print("=== SIGNATURE HELP RESPONSE ===")
     debug_print("Error:", err and vim.inspect(err) or "none")
@@ -105,6 +127,65 @@ local function create_signature_popup(completion_item, main_buf)
     
     if not result or not result.signatures or #result.signatures == 0 then
       debug_print("No signatures in response")
+      
+      -- FALLBACK: Try a simpler approach using the function name directly
+      debug_print("Trying fallback approach with function name lookup...")
+      
+      -- Create a simple signature help request at the function name position
+      local fallback_params = vim.lsp.util.make_position_params(0, otter_nr)
+      fallback_params.context = {
+        triggerKind = 1,
+        isRetrigger = false
+      }
+      
+      -- Try to simulate typing the function name + opening paren
+      local function_name = completion_item.label
+      debug_print("Attempting fallback signature request for:", function_name)
+      
+      -- For now, create a simple placeholder popup since signature help failed
+      local contents = {
+        "**" .. function_name .. "**()",
+        "",
+        "Function signature help not available",
+        "Try typing `" .. function_name .. "(` for full signature help"
+      }
+      
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents)
+      vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
+      vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+
+      local win_opts = {
+        relative = 'cursor',
+        width = math.min(50, math.max(20, string.len(function_name) + 10)),
+        height = #contents,
+        row = 0,
+        col = 25,
+        style = 'minimal',
+        border = 'rounded',
+        title = ' Preview ',
+        title_pos = 'center'
+      }
+
+      local win = vim.api.nvim_open_win(buf, false, win_opts)
+      vim.api.nvim_win_set_option(win, 'wrap', true)
+      
+      current_popup.win = win
+      current_popup.buf = buf
+      current_popup.last_item = completion_item
+      
+      debug_print("Created fallback popup for:", function_name)
+      
+      -- Auto-close
+      vim.api.nvim_create_autocmd({'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave'}, {
+        buffer = main_buf,
+        once = true,
+        callback = function()
+          debug_print("Auto-closing fallback popup")
+          close_popup()
+        end
+      })
+      
       return
     end
 
