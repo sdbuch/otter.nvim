@@ -52,38 +52,12 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
-  -- Debug logging
-  if require("otter.config").debug then
-    vim.print("=== OTTER SIGNATURE HELP RESPONSE ===")
-    vim.print("2. Response received from language server")
-    if err then
-      vim.print("   ERROR:", err)
-    end
-    if response then
-      vim.print("   Response received:", vim.inspect(response))
-      if response.signatures then
-        vim.print("   Number of signatures:", #response.signatures)
-        for i, sig in ipairs(response.signatures) do
-          vim.print("   Signature " .. i .. ":", sig.label)
-        end
-      end
-    else
-      vim.print("   NO RESPONSE received")
-    end
-    vim.print("   Original URI:", ctx.params.textDocument.uri)
-    vim.print("   Main URI:", ctx.params.otter.main_uri)
-  end
-  
   if not response then
     return err, response, ctx
   end
 
   -- pretend the response is coming from the main buffer
   ctx.params.textDocument.uri = ctx.params.otter.main_uri
-
-  if require("otter.config").debug then
-    vim.print("3. Forwarding response to default handler")
-  end
 
   -- pass modified response on to the default handler
   return err, response, ctx

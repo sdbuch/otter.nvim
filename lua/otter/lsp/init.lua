@@ -190,6 +190,21 @@ otterls.start = function(main_nr, completion)
             if not supports_sig_help then
               vim.print("   WARNING: No language server supports signatureHelp!")
             end
+            
+            -- Add a callback to see the response
+            local original_handler = handler
+            handler = function(err, result, ctx)
+              vim.print("=== SIGNATURE HELP RESPONSE ===")
+              if err then
+                vim.print("   ERROR:", err)
+              end
+              if result then
+                vim.print("   Response received with", result.signatures and #result.signatures or 0, "signatures")
+              else
+                vim.print("   NO RESPONSE received")
+              end
+              return original_handler(err, result, ctx)
+            end
           end
           
           -- send the request to the otter buffer
