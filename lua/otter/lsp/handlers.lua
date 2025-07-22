@@ -54,40 +54,60 @@ end
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   vim.print("=== OTTER SIGNATURE HELP HANDLER ===")
   vim.print("Response received:", response ~= nil)
-  if response then
-    vim.print("Signatures count:", response.signatures and #response.signatures or 0)
-    if response.signatures and #response.signatures > 0 then
-      vim.print("First signature:", response.signatures[1].label)
-    end
-    vim.print("Active signature:", response.activeSignature)
-    vim.print("Active parameter:", response.activeParameter)
-    vim.print("Full response:", vim.inspect(response))
-  end
   
-  if not response then
-    vim.print("No response received, calling default handler with original context")
-    vim.lsp.handlers.signature_help(err, response, ctx)
+  if err or not response or not response.signatures or #response.signatures == 0 then
+    vim.print("No signature help available (err or empty response)")
     return
   end
 
-  -- Store original URI for debugging
-  local original_uri = ctx.params.textDocument.uri
+  vim.print("Signatures count:", #response.signatures)
   
-  -- pretend the response is coming from the main buffer
-  ctx.params.textDocument.uri = ctx.params.otter.main_uri
-  -- Also update the buffer number to the main buffer
-  ctx.bufnr = ctx.params.otter.main_nr
+  -- Get the active signature (default to first one)
+  local active_signature_index = (response.activeSignature or 0) + 1
+  if active_signature_index > #response.signatures then
+    active_signature_index = 1
+  end
   
-  vim.print("Original URI:", original_uri)
-  vim.print("Modified URI:", ctx.params.otter.main_uri)
-  vim.print("Buffer number:", ctx.bufnr)
-  vim.print("Method:", ctx.method)
-  
-  vim.print("Calling default signature_help handler...")
+  local signature = response.signatures[active_signature_index]
+  if not signature then
+    vim.print("No valid signature found")
+    return
+  end
 
-  -- Call the default signature_help handler directly to ensure popup display
-  -- Don't return anything - LSP handlers should be void
-  vim.lsp.handlers.signature_help(err, response, ctx)
+  vim.print("Using signature:", signature.label)
+  
+  -- Create the content for the floating window
+  local contents = {}
+  
+  -- Add the main signature label
+  table.insert(contents, "```python")
+  table.insert(contents, signature.label)
+  table.insert(contents, "```")
+  
+  -- Add documentation if available
+  if signature.documentation then
+    table.insert(contents, "")
+    if type(signature.documentation) == "string" then
+      table.insert(contents, signature.documentation)
+    elseif signature.documentation.value then
+      table.insert(contents, signature.documentation.value)
+    end
+  end
+  
+  -- Show the floating window
+  local bufnr, winnr = vim.lsp.util.open_floating_preview(contents, "markdown", {
+    title = "Signature Help",
+    close_events = { "CursorMoved", "BufHidden", "InsertCharPre" },
+    focusable = false,
+    focus = false,
+  })
+  
+  -- Store the window/buffer for potential cleanup
+  if winnr and vim.api.nvim_win_is_valid(winnr) then
+    vim.print("Signature help popup displayed successfully")
+  else
+    vim.print("Failed to display signature help popup")
+  end
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
