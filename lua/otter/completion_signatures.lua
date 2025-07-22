@@ -544,6 +544,13 @@ end
 function M.set_enabled(enabled)
   FEATURE_ENABLED = enabled
   vim.print("Completion signatures:", enabled and "ENABLED" or "DISABLED")
+  
+  -- If enabling, automatically run setup for current buffer
+  if enabled then
+    local current_buf = vim.api.nvim_get_current_buf()
+    vim.print("Re-running setup for buffer:", current_buf)
+    M.setup(current_buf)
+  end
 end
 
 -- Reload the module (clears cached version)
