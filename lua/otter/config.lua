@@ -91,7 +91,7 @@ OtterConfig = {
     zig = "zig",
   },
   -- add event listeners for LSP events for debugging
-  debug = true,
+  debug = false,
   verbose = { -- set to false to disable all verbose messages
     no_code_found = false, -- warn if otter.activate is called, but no injected code was found
   },

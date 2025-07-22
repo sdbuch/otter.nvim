@@ -296,10 +296,10 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
 
     vim.api.nvim_create_autocmd("LspRequest", {
       callback = function(args)
-        local bufnr = args.buf
-        local client_id = args.data.client_id
-        local method = args.data.method
-        local request = args.data.request
+        local bufnr = args.buf or "unknown"
+        local client_id = args.data and args.data.client_id or "unknown"
+        local method = args.data and args.data.method or "unknown"
+        local request = args.data and args.data.request or {}
         vim.print(bufnr .. "[" .. client_id .. "]" .. ": " .. method)
         vim.print(request)
       end,
