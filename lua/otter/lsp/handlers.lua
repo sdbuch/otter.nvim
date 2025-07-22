@@ -52,15 +52,9 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
-  vim.print("=== OTTER SIGNATURE HELP HANDLER ===")
-  vim.print("Response received:", response ~= nil)
-  
   if err or not response or not response.signatures or #response.signatures == 0 then
-    vim.print("No signature help available (err or empty response)")
     return
   end
-
-  vim.print("Signatures count:", #response.signatures)
   
   -- Get the active signature (default to first one)
   local active_signature_index = (response.activeSignature or 0) + 1
@@ -70,11 +64,8 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   
   local signature = response.signatures[active_signature_index]
   if not signature then
-    vim.print("No valid signature found")
     return
   end
-
-  vim.print("Using signature:", signature.label)
   
   -- Create the content for the floating window
   local contents = {}
@@ -95,19 +86,12 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   end
   
   -- Show the floating window
-  local bufnr, winnr = vim.lsp.util.open_floating_preview(contents, "markdown", {
+  vim.lsp.util.open_floating_preview(contents, "markdown", {
     title = "Signature Help",
     close_events = { "CursorMoved", "BufHidden", "InsertCharPre" },
     focusable = false,
     focus = false,
   })
-  
-  -- Store the window/buffer for potential cleanup
-  if winnr and vim.api.nvim_win_is_valid(winnr) then
-    vim.print("Signature help popup displayed successfully")
-  else
-    vim.print("Failed to display signature help popup")
-  end
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)

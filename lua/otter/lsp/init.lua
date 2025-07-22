@@ -36,6 +36,20 @@ otterls.start = function(main_nr, completion)
         ---@param handler lsp.Handler function(err, response, ctx) handler is a callback function that should be called with the result depending on the method it is either a user-defined handler (e.g. user's using telescope to list references) or the default vim.lsp.handlers[method] handler
         ---@param _ function notify_reply_callback function. Not currently used
         request = function(method, params, handler, _)
+          -- Debug all signature help requests 
+          if method == ms.textDocument_signatureHelp then
+            vim.print("=== OTTER-LS REQUEST DEBUG ===")
+            vim.print("Method:", method)
+            vim.print("Request type: " .. (params.context and params.context.triggerKind and 
+                      (params.context.triggerKind == 1 and "INVOKED" or 
+                       params.context.triggerKind == 2 and "TRIGGER_CHARACTER" or 
+                       params.context.triggerKind == 3 and "RETRIGGER" or "UNKNOWN") or "NO_CONTEXT"))
+            if params.context and params.context.triggerCharacter then
+              vim.print("Trigger character:", params.context.triggerCharacter)
+            end
+            vim.print("Position:", params.position)
+          end
+          
           -- handle initialization first
           if method == ms.initialize then
             local completion_options
@@ -170,7 +184,7 @@ otterls.start = function(main_nr, completion)
           -- take care of potential indents
           keeper.modify_position(params, main_nr, true, true)
           
-          -- send the request to the otter buffer
+          -- t stisend the request to the otter buffer
           -- modification of the response is done by our handler
           -- and then passed on to the default handler or user-defined handler
           vim.lsp.buf_request(otter_nr, method, params, function(err, result, ctx)
