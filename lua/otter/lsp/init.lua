@@ -198,10 +198,36 @@ otterls.start = function(main_nr, completion)
           -- take care of potential indents
           keeper.modify_position(params, main_nr, true, true)
           
+          -- Additional debugging for signature help
+          if method == ms.textDocument_signatureHelp then
+            vim.print("=== SENDING TO OTTER BUFFER ===")
+            vim.print("Otter buffer:", otter_nr)
+            vim.print("Language:", lang)  
+            vim.print("Modified position:", params.position)
+            vim.print("Otter URI:", otter_uri)
+            
+            -- Check what clients are attached to the otter buffer
+            local otter_clients = vim.lsp.get_clients({ bufnr = otter_nr })
+            vim.print("Clients on otter buffer:", #otter_clients)
+            for _, client in ipairs(otter_clients) do
+              vim.print("  -", client.name, "supports sig help:", client.supports_method(method))
+            end
+          end
+          
           -- t stisend the request to the otter buffer
           -- modification of the response is done by our handler
           -- and then passed on to the default handler or user-defined handler
           vim.lsp.buf_request(otter_nr, method, params, function(err, result, ctx)
+            -- Debug signature help responses
+            if method == ms.textDocument_signatureHelp then
+              vim.print("=== RESPONSE FROM OTTER BUFFER ===")
+              vim.print("Error:", err and vim.inspect(err) or "none")
+              vim.print("Result:", result and "received" or "none") 
+              if result and result.signatures then
+                vim.print("Signatures:", #result.signatures)
+              end
+            end
+            
             if handlers[method] ~= nil then
               err, result, ctx = handlers[method](err, result, ctx)
             end

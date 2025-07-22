@@ -347,6 +347,32 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       
       vim.print("=== AUTO-TRIGGER SETUP ===")
       vim.print("Signature help auto-trigger enabled for chars:", vim.inspect(trigger_chars))
+      
+      -- Add diagnostic command to test pyright directly
+      vim.api.nvim_create_user_command('OtterTestPyright', function()
+        vim.print("=== PYRIGHT DIAGNOSTIC TEST ===")
+        -- Find a Python otter buffer
+        for lang, buf_nr in pairs(keeper.rafts[main_nr].buffers) do
+          if lang == "python" then
+            vim.print("Testing pyright on otter buffer:", buf_nr)
+            local clients = vim.lsp.get_clients({ bufnr = buf_nr })
+            for _, client in ipairs(clients) do
+              vim.print("Client on otter buffer:", client.name)
+              if client.name == "pyright" or client.name:match("pyright") then
+                vim.print("Found pyright! Testing signature help...")
+                -- Switch to otter buffer temporarily and test
+                local current_buf = vim.api.nvim_get_current_buf()
+                vim.api.nvim_set_current_buf(buf_nr)
+                vim.lsp.buf.signature_help()
+                vim.api.nvim_set_current_buf(current_buf)
+                return
+              end
+            end
+            vim.print("No pyright client found on otter buffer")
+            break
+          end
+        end
+      end, {})
     end
   end
 end
