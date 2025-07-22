@@ -52,46 +52,48 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
-  if err or not response or not response.signatures or #response.signatures == 0 then
+  vim.print("=== SIGNATURE HELP HANDLER (SIMPLIFIED) ===")
+  vim.print("Error:", err and "present" or "none")
+  vim.print("Response:", response and "present" or "none")
+  
+  if err then
+    vim.print("Handler error:", vim.inspect(err))
     return
   end
   
-  -- Get the active signature (default to first one)
-  local active_signature_index = (response.activeSignature or 0) + 1
-  if active_signature_index > #response.signatures then
-    active_signature_index = 1
-  end
-  
-  local signature = response.signatures[active_signature_index]
-  if not signature then
+  if not response then
+    vim.print("Handler: no response")
     return
   end
   
-  -- Create the content for the floating window
-  local contents = {}
-  
-  -- Add the main signature label
-  table.insert(contents, "```python")
-  table.insert(contents, signature.label)
-  table.insert(contents, "```")
-  
-  -- Add documentation if available
-  if signature.documentation then
-    table.insert(contents, "")
-    if type(signature.documentation) == "string" then
-      table.insert(contents, signature.documentation)
-    elseif signature.documentation.value then
-      table.insert(contents, signature.documentation.value)
-    end
+  if not response.signatures then
+    vim.print("Handler: no signatures field")
+    return
   end
   
-  -- Show the floating window
-  vim.lsp.util.open_floating_preview(contents, "markdown", {
-    title = "Signature Help",
-    close_events = { "CursorMoved", "BufHidden", "InsertCharPre" },
-    focusable = false,
-    focus = false,
-  })
+  if #response.signatures == 0 then
+    vim.print("Handler: empty signatures")
+    return
+  end
+  
+  vim.print("Handler: received", #response.signatures, "signatures")
+  vim.print("First signature:", response.signatures[1].label)
+  
+  -- Update context to point to main buffer (required for default handler)
+  if ctx.params and ctx.params.otter then
+    ctx.params.textDocument.uri = ctx.params.otter.main_uri
+    ctx.bufnr = ctx.params.otter.main_nr
+  end
+  
+  -- Always use the default LSP signature help handler
+  local default_handler = vim.lsp.handlers['textDocument/signatureHelp']
+  if default_handler then
+    vim.print("Handler: calling default LSP handler")
+    default_handler(err, response, ctx)
+    vim.print("Handler: default handler called successfully")
+  else
+    vim.print("Handler: no default handler available")
+  end
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
