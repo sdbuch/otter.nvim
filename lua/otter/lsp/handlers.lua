@@ -52,6 +52,14 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
+  -- Basic debugging to see what's happening
+  vim.print("=== SIGNATURE HELP HANDLER ===")
+  vim.print("Error:", err)
+  vim.print("Has response:", response ~= nil)
+  if response then
+    vim.print("Signatures count:", response.signatures and #response.signatures or "none")
+  end
+  
   if not response then
     return err, response, ctx
   end
@@ -59,8 +67,8 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   -- pretend the response is coming from the main buffer
   ctx.params.textDocument.uri = ctx.params.otter.main_uri
 
-  -- Call the default handler explicitly for auto-popup functionality
-  return vim.lsp.handlers['textDocument/signatureHelp'](err, response, ctx)
+  -- pass modified response on to the default handler
+  return err, response, ctx
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
