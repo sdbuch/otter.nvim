@@ -70,7 +70,7 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
         
         -- Heuristic: if the window contains text that looks like completion items
         -- (has multiple lines, or contains common completion patterns)
-        if #lines > 1 or (lines[1] and string.find(lines[1], "Function\|Variable\|Class\|Method")) then
+        if #lines > 1 or (lines[1] and (string.find(lines[1], "Function") or string.find(lines[1], "Variable") or string.find(lines[1], "Class") or string.find(lines[1], "Method"))) then
           completion_win = win
           completion_pos = { config.row or 0, config.col or 0 }
           completion_width = config.width or 30
