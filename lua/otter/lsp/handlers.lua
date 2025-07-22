@@ -88,7 +88,18 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
       local param = signature.parameters[active_param + 1]
       if param.documentation then
         table.insert(contents, "")
-        table.insert(contents, "**" .. param.label .. "**")
+        
+        -- Handle parameter label (can be string or [start, end] range)
+        local param_label = param.label
+        if type(param_label) == "table" and #param_label == 2 then
+          -- Label is a range [start, end] in the signature
+          local start_pos, end_pos = param_label[1], param_label[2]
+          param_label = string.sub(signature.label, start_pos + 1, end_pos)
+        elseif type(param_label) ~= "string" then
+          param_label = tostring(param_label)
+        end
+        
+        table.insert(contents, "**" .. param_label .. "**")
         if type(param.documentation) == "string" then
           table.insert(contents, param.documentation)
         elseif param.documentation.value then
