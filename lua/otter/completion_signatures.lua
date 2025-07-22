@@ -5,6 +5,9 @@ local M = {}
 
 local keeper = require("otter.keeper")
 
+-- TEMPORARY: Disable to stop errors while debugging
+local FEATURE_ENABLED = false
+
 -- Track current signature popup
 local current_popup = {
   win = nil,
@@ -427,6 +430,12 @@ end
 function M.setup(main_buf)
   main_buf = main_buf or vim.api.nvim_get_current_buf()
   
+  -- TEMPORARY: Check if feature is enabled
+  if not FEATURE_ENABLED then
+    vim.print("Completion signatures: DISABLED (debugging)")
+    return
+  end
+  
   debug_print("=== SETTING UP COMPLETION SIGNATURES ===")
   debug_print("Main buffer:", main_buf)
   
@@ -529,6 +538,19 @@ end
 function M.set_debug(enabled)
   DEBUG = enabled
   debug_print("Debug logging", enabled and "enabled" or "disabled")
+end
+
+-- Enable/disable the feature (for debugging)
+function M.set_enabled(enabled)
+  FEATURE_ENABLED = enabled
+  vim.print("Completion signatures:", enabled and "ENABLED" or "DISABLED")
+end
+
+-- Reload the module (clears cached version)
+function M.reload()
+  package.loaded['otter.completion_signatures'] = nil
+  vim.print("Completion signatures module reloaded")
+  return require('otter.completion_signatures')
 end
 
 return M 

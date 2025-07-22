@@ -28,6 +28,31 @@ end, {
   desc = "Enable/disable debug logging for completion signatures" 
 })
 
+-- Enable/disable completion signatures feature
+vim.api.nvim_create_user_command("OtterCompletionSignatures", function(opts)
+  local completion_signatures = require("otter.completion_signatures")
+  local enable = opts.args == "on" or opts.args == "true" or opts.args == "1"
+  local disable = opts.args == "off" or opts.args == "false" or opts.args == "0"
+  local reload = opts.args == "reload"
+  
+  if enable then
+    completion_signatures.set_enabled(true)
+    vim.notify("Completion signatures: ENABLED", vim.log.levels.INFO)
+  elseif disable then
+    completion_signatures.set_enabled(false)
+    vim.notify("Completion signatures: DISABLED", vim.log.levels.INFO)
+  elseif reload then
+    completion_signatures.reload()
+    vim.notify("Completion signatures: RELOADED", vim.log.levels.INFO)
+  else
+    vim.notify("Usage: :OtterCompletionSignatures [on|off|reload]", vim.log.levels.WARN)
+  end
+end, { 
+  nargs = "?", 
+  complete = function() return {"on", "off", "reload"} end,
+  desc = "Control completion signatures feature" 
+})
+
 vim.api.nvim_create_user_command("OtterExport", function(opts)
   require("otter").export(opts.bang == true)
 end, { bang = true })
