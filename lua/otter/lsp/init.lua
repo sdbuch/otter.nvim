@@ -42,22 +42,17 @@ otterls.start = function(main_nr, completion)
         request = function(method, params, handler, _)
           -- Debug signature help requests (reduced noise)
           if method == ms.textDocument_signatureHelp then
-            vim.print("=== OTTER-LS SIGNATURE HELP ===")
-            vim.print("Has context:", params.context ~= nil)
+            vim.print("=== SIGNATURE HELP REQUEST ===")
+            local trigger_type = params.context and params.context.triggerKind == 2 and "AUTO" or "MANUAL"
+            vim.print("Type:", trigger_type, "| Position:", params.position.line .. ":" .. params.position.character)
             
             -- FIX: Add missing context for signature help requests
             -- Neovim's LSP client doesn't add context for custom function-based servers
             if not params.context then
-              vim.print("Adding missing context (manual trigger)")
               params.context = {
                 triggerKind = 1, -- SignatureHelpTriggerKind.Invoked
                 isRetrigger = false
               }
-            else
-              local trigger_type = params.context.triggerKind == 1 and "MANUAL" or 
-                                  params.context.triggerKind == 2 and "AUTO(" .. (params.context.triggerCharacter or "?") .. ")" or 
-                                  "OTHER"
-              vim.print("Context present:", trigger_type)
             end
           end
           
@@ -200,18 +195,7 @@ otterls.start = function(main_nr, completion)
           
           -- Additional debugging for signature help
           if method == ms.textDocument_signatureHelp then
-            vim.print("=== SENDING TO OTTER BUFFER ===")
-            vim.print("Otter buffer:", otter_nr)
-            vim.print("Language:", lang)  
-            vim.print("Modified position:", params.position)
-            vim.print("Otter URI:", otter_uri)
-            
-            -- Check what clients are attached to the otter buffer
-            local otter_clients = vim.lsp.get_clients({ bufnr = otter_nr })
-            vim.print("Clients on otter buffer:", #otter_clients)
-            for _, client in ipairs(otter_clients) do
-              vim.print("  -", client.name, "supports sig help:", client.supports_method(method))
-            end
+            vim.print("Sending to otter buffer", otter_nr, "language:", lang)
           end
           
           -- t stisend the request to the otter buffer
@@ -220,12 +204,8 @@ otterls.start = function(main_nr, completion)
           vim.lsp.buf_request(otter_nr, method, params, function(err, result, ctx)
             -- Debug signature help responses
             if method == ms.textDocument_signatureHelp then
-              vim.print("=== RESPONSE FROM OTTER BUFFER ===")
-              vim.print("Error:", err and vim.inspect(err) or "none")
-              vim.print("Result:", result and "received" or "none") 
-              if result and result.signatures then
-                vim.print("Signatures:", #result.signatures)
-              end
+              local status = err and "ERROR" or (result and result.signatures and #result.signatures .. " sigs" or "none")
+              vim.print("Response:", status)
             end
             
             if handlers[method] ~= nil then

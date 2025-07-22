@@ -337,9 +337,18 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
               vim.print("Triggered by character:", char)
               vim.print("Language context:", lang)
               
-              -- Simply call the standard signature help function
-              -- otter-ls will handle context injection and proper routing
-              vim.lsp.buf.signature_help()
+              -- Wait a bit more for the cursor position to be fully updated
+              vim.defer_fn(function()
+                -- Double-check we're still in the right buffer and context
+                if vim.api.nvim_get_current_buf() ~= main_nr then return end
+                local current_lang = require("otter.keeper").get_current_language_context(main_nr)
+                if current_lang ~= lang then return end
+                
+                vim.print("Auto-trigger: calling signature_help after delay")
+                -- Simply call the standard signature help function
+                -- otter-ls will handle context injection and proper routing
+                vim.lsp.buf.signature_help()
+              end, 50) -- 50ms delay to ensure cursor position is updated
             end)
           end
         end

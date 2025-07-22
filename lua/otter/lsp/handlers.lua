@@ -52,32 +52,11 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
-  vim.print("=== SIGNATURE HELP HANDLER ===")
-  vim.print("Error:", err and "present" or "none")
-  vim.print("Response:", response and "present" or "none")
-  
-  if err then
-    vim.print("Handler error:", vim.inspect(err))
+  if err or not response or not response.signatures or #response.signatures == 0 then
     return
   end
   
-  if not response then
-    vim.print("Handler: no response")
-    return
-  end
-  
-  if not response.signatures then
-    vim.print("Handler: no signatures field")
-    return
-  end
-  
-  if #response.signatures == 0 then
-    vim.print("Handler: empty signatures")
-    return
-  end
-  
-  vim.print("Handler: received", #response.signatures, "signatures")
-  vim.print("First signature:", response.signatures[1].label)
+  vim.print("Creating signature popup:", #response.signatures, "signatures")
   
   -- PRIMARY APPROACH: Create custom floating window (more reliable)
   local signature = response.signatures[1] -- Use first signature
@@ -101,7 +80,6 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   end
   
   -- Create floating window with proper options
-  vim.print("Handler: creating custom popup")
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents)
   
@@ -130,7 +108,7 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   
   -- Auto-close on cursor movement or buffer change
   vim.api.nvim_create_autocmd({'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave'}, {
-    buffer = ctx.bufnr or vim.api.nvim_get_current_buf(),
+    buffer = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf(),
     once = true,
     callback = function()
       if vim.api.nvim_win_is_valid(win) then
@@ -139,31 +117,21 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
     end
   })
   
-  vim.print("Handler: custom popup created successfully")
-  
-  -- FALLBACK: Try default handler as backup (with fixed client_id)
-  if ctx.params and ctx.params.otter then
-    -- Find the actual otter-ls client ID
-    local otter_clients = vim.lsp.get_clients({ name = "otter-ls[" .. ctx.params.otter.main_nr .. "]" })
-    local correct_client_id = #otter_clients > 0 and otter_clients[1].id or ctx.client_id
-    
-    local fresh_ctx = {
-      method = 'textDocument/signatureHelp',
-      bufnr = ctx.params.otter.main_nr,
-      client_id = correct_client_id,
-      params = {
-        textDocument = { uri = ctx.params.otter.main_uri },
-        position = ctx.params.position,
-        context = ctx.params.context
-      }
-    }
-    
-    vim.print("Handler: also trying default handler with correct client_id:", correct_client_id)
-    local default_handler = vim.lsp.handlers['textDocument/signatureHelp']
-    if default_handler then
-      pcall(default_handler, err, response, fresh_ctx)
+  -- Also add escape key to close
+  vim.keymap.set('n', '<Esc>', function()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+      return true
     end
-  end
+    return false
+  end, { buffer = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf(), once = true })
+  
+  -- Also close after a timeout as backup
+  vim.defer_fn(function()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true) 
+    end
+  end, 10000) -- 10 seconds
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
