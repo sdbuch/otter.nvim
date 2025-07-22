@@ -58,7 +58,46 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   
   vim.print("Creating signature popup:", #response.signatures, "signatures")
   
-  -- PRIMARY APPROACH: Create custom floating window (more reliable)
+  -- TRY DEFAULT HANDLER FIRST (pyright's native formatting with parameter highlighting)
+  -- Create proper context for the default handler
+  local main_buf = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf()
+  
+  -- Find the correct client (should be otter-ls)
+  local otter_clients = vim.lsp.get_clients({ bufnr = main_buf })
+  local client_id = nil
+  for _, client in ipairs(otter_clients) do
+    if client.name:match("otter%-ls") and client.supports_method('textDocument/signatureHelp') then
+      client_id = client.id
+      break
+    end
+  end
+  
+  if client_id then
+    local default_ctx = {
+      method = 'textDocument/signatureHelp',
+      bufnr = main_buf,
+      client_id = client_id,
+      params = ctx.params or {}
+    }
+    
+    -- Try the default handler first (this gives us parameter highlighting and native pyright formatting)
+    local default_handler = vim.lsp.handlers['textDocument/signatureHelp']
+    if default_handler then
+      vim.print("Trying default handler for dynamic signature help...")
+      local success = pcall(default_handler, err, response, default_ctx)
+      
+      if success then
+        vim.print("Default handler succeeded - using pyright's native formatting")
+        return -- Success! Use pyright's native dynamic signature help
+      else
+        vim.print("Default handler failed, falling back to custom popup")
+      end
+    end
+  end
+  
+  -- FALLBACK: Custom floating window (static but reliable)
+  vim.print("Using custom popup fallback")
+  
   local signature = response.signatures[1] -- Use first signature
   local contents = {}
   
@@ -106,9 +145,9 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   vim.api.nvim_win_set_option(win, 'wrap', true)
   vim.api.nvim_win_set_option(win, 'linebreak', true)
   
-  -- Auto-close on cursor movement or buffer change
-  vim.api.nvim_create_autocmd({'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave'}, {
-    buffer = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf(),
+  -- Auto-close on major events only (more persistent like pyright)
+  vim.api.nvim_create_autocmd({'BufLeave', 'InsertLeave'}, {
+    buffer = main_buf,
     once = true,
     callback = function()
       if vim.api.nvim_win_is_valid(win) then
@@ -117,12 +156,29 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
     end
   })
   
-  -- Also close after a timeout as backup
+  -- Also close when moving to a different line
+  vim.api.nvim_create_autocmd('CursorMoved', {
+    buffer = main_buf,
+    callback = function()
+      local current_pos = vim.api.nvim_win_get_cursor(0)
+      local original_line = ctx.params and ctx.params.position and ctx.params.position.line
+      
+      -- Close if we moved to a different line
+      if original_line and current_pos[1] - 1 ~= original_line then
+        if vim.api.nvim_win_is_valid(win) then
+          vim.api.nvim_win_close(win, true)
+          return true -- Remove this autocmd
+        end
+      end
+    end
+  })
+  
+  -- Shorter timeout (5 seconds)
   vim.defer_fn(function()
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true) 
     end
-  end, 10000) -- 10 seconds
+  end, 5000) -- 5 seconds instead of 10
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)

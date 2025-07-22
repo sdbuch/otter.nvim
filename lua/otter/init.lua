@@ -299,13 +299,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
   -- Debug: Show what clients are attached to the main buffer (reduced noise)
   vim.print("=== OTTER LSP SETUP COMPLETE ===")
   vim.print("Main buffer:", main_nr, "| otter-ls client:", otterclient_id or "FAILED")
-  local main_clients = vim.lsp.get_clients({ bufnr = main_nr })
-  for _, client in ipairs(main_clients) do
-    if client.supports_method('textDocument/signatureHelp') then
-      vim.print("Signature help enabled:", client.name)
-    end
-  end
-
+  
   -- SIGNATURE HELP AUTO-TRIGGER SUPPORT
   -- Custom function-based LSP servers don't get auto-trigger from Neovim's LSP client
   -- So we need to implement it manually
@@ -333,10 +327,6 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
               local lang = require("otter.keeper").get_current_language_context(main_nr)
               if not lang then return end
               
-              vim.print("=== AUTO-TRIGGER SIGNATURE HELP ===")
-              vim.print("Triggered by character:", char)
-              vim.print("Language context:", lang)
-              
               -- Wait a bit more for the cursor position to be fully updated
               vim.defer_fn(function()
                 -- Double-check we're still in the right buffer and context
@@ -344,46 +334,55 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
                 local current_lang = require("otter.keeper").get_current_language_context(main_nr)
                 if current_lang ~= lang then return end
                 
-                vim.print("Auto-trigger: calling signature_help after delay")
-                -- Simply call the standard signature help function
-                -- otter-ls will handle context injection and proper routing
-                vim.lsp.buf.signature_help()
+                -- Call signature help with proper auto-trigger context
+                -- Create the request manually to include proper trigger context
+                local pos = vim.api.nvim_win_get_cursor(0)
+                local params = vim.lsp.util.make_position_params(0)
+                params.context = {
+                  triggerKind = 2, -- SignatureHelpTriggerKind.TriggerCharacter  
+                  triggerCharacter = char,
+                  isRetrigger = false
+                }
+                
+                -- Send the request with proper auto-trigger context
+                vim.lsp.buf_request(main_nr, 'textDocument/signatureHelp', params, function(err, result, ctx)
+                  -- The otter-ls handler will process this with the right context
+                end)
               end, 50) -- 50ms delay to ensure cursor position is updated
             end)
           end
         end
       })
       
-      vim.print("=== AUTO-TRIGGER SETUP ===")
-      vim.print("Signature help auto-trigger enabled for chars:", vim.inspect(trigger_chars))
-      
-      -- Add diagnostic command to test pyright directly
-      vim.api.nvim_create_user_command('OtterTestPyright', function()
-        vim.print("=== PYRIGHT DIAGNOSTIC TEST ===")
-        -- Find a Python otter buffer
-        for lang, buf_nr in pairs(keeper.rafts[main_nr].buffers) do
-          if lang == "python" then
-            vim.print("Testing pyright on otter buffer:", buf_nr)
-            local clients = vim.lsp.get_clients({ bufnr = buf_nr })
-            for _, client in ipairs(clients) do
-              vim.print("Client on otter buffer:", client.name)
-              if client.name == "pyright" or client.name:match("pyright") then
-                vim.print("Found pyright! Testing signature help...")
-                -- Switch to otter buffer temporarily and test
-                local current_buf = vim.api.nvim_get_current_buf()
-                vim.api.nvim_set_current_buf(buf_nr)
-                vim.lsp.buf.signature_help()
-                vim.api.nvim_set_current_buf(current_buf)
-                return
-              end
-            end
-            vim.print("No pyright client found on otter buffer")
-            break
-          end
-        end
-      end, {})
+      vim.print("Signature help auto-trigger enabled")
     end
   end
+
+  -- Add diagnostic command to test pyright directly
+  vim.api.nvim_create_user_command('OtterTestPyright', function()
+    vim.print("=== PYRIGHT DIAGNOSTIC TEST ===")
+    -- Find a Python otter buffer
+    for lang, buf_nr in pairs(keeper.rafts[main_nr].buffers) do
+      if lang == "python" then
+        vim.print("Testing pyright on otter buffer:", buf_nr)
+        local clients = vim.lsp.get_clients({ bufnr = buf_nr })
+        for _, client in ipairs(clients) do
+          vim.print("Client on otter buffer:", client.name)
+          if client.name == "pyright" or client.name:match("pyright") then
+            vim.print("Found pyright! Testing signature help...")
+            -- Switch to otter buffer temporarily and test
+            local current_buf = vim.api.nvim_get_current_buf()
+            vim.api.nvim_set_current_buf(buf_nr)
+            vim.lsp.buf.signature_help()
+            vim.api.nvim_set_current_buf(current_buf)
+            return
+          end
+        end
+        vim.print("No pyright client found on otter buffer")
+        break
+      end
+    end
+  end, {})
 end
 
 ---Deactivate the current buffer by removing otter buffers and clearing diagnostics
