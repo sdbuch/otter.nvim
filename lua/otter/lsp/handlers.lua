@@ -65,7 +65,9 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   end
   
   if not response then
-    return err, response, ctx
+    vim.print("No response received, calling default handler with original context")
+    vim.lsp.handlers.signature_help(err, response, ctx)
+    return
   end
 
   -- Store original URI for debugging
@@ -84,9 +86,8 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   vim.print("Calling default signature_help handler...")
 
   -- Call the default signature_help handler directly to ensure popup display
-  local result = vim.lsp.handlers.signature_help(err, response, ctx)
-  vim.print("Default handler returned:", result)
-  return result
+  -- Don't return anything - LSP handlers should be void
+  vim.lsp.handlers.signature_help(err, response, ctx)
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
