@@ -49,55 +49,27 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
   vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
 
-  -- Get current window and cursor position for smarter positioning
-  local win = vim.api.nvim_get_current_win()
-  local cursor_pos = vim.api.nvim_win_get_cursor(win)
-  local win_width = vim.api.nvim_win_get_width(win)
-  local win_height = vim.api.nvim_win_get_height(win)
-  
   -- Calculate popup dimensions
-  local popup_width = math.min(60, math.max(25, string.len(title) + 10))
-  local popup_height = math.min(8, #contents)
+  local popup_width = math.min(60, math.max(30, string.len(title) + 10))
+  local popup_height = math.min(10, #contents)
   
-  -- Smart positioning to avoid overlap with completion menu
-  -- Try different positions: right of cursor, below cursor, above cursor, left of cursor
-  local positions = {
-    -- Right of cursor (preferred)
-    { row = -1, col = 15, anchor = 'NW' },
-    -- Below and right
-    { row = 1, col = 10, anchor = 'NW' },
-    -- Above and right  
-    { row = -popup_height - 1, col = 10, anchor = 'NW' },
-    -- Far right
-    { row = 0, col = 30, anchor = 'NW' },
-  }
-  
+  -- Position adjacent to completion menu (like auto-import popup)
+  -- The completion menu appears below the cursor, so we position to the right of it
   local win_opts = {
     relative = 'cursor',
     width = popup_width,
     height = popup_height,
+    row = 1, -- Below cursor (where completion menu starts)
+    col = 35, -- To the right of completion menu (completion menu is ~30 chars wide)
     style = 'minimal',
     border = 'rounded',
     title = is_signature and ' Signature ' or ' Preview ',
     title_pos = 'center',
     zindex = 1000, -- High z-index to appear above other popups
+    anchor = 'NW' -- Northwest anchor for consistent positioning
   }
   
-  -- Try each position until we find one that fits
-  local chosen_pos = positions[1] -- Default to first position
-  for _, pos in ipairs(positions) do
-    -- Simple check: if position is reasonable, use it
-    if pos.col + popup_width < win_width - 5 then
-      chosen_pos = pos
-      break
-    end
-  end
-  
-  win_opts.row = chosen_pos.row
-  win_opts.col = chosen_pos.col
-  win_opts.anchor = chosen_pos.anchor
-  
-  debug_print("Creating popup at position:", chosen_pos.row, chosen_pos.col)
+  debug_print("Creating popup adjacent to completion menu at:", win_opts.row, win_opts.col)
   
   local popup_win = vim.api.nvim_open_win(buf, false, win_opts)
   vim.api.nvim_win_set_option(popup_win, 'wrap', true)
@@ -108,26 +80,27 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   current_popup.buf = buf
   current_popup.last_item = completion_item
   
-  debug_print("Signature popup created successfully at:", chosen_pos.row, chosen_pos.col)
+  debug_print("Signature popup created adjacent to completion menu")
   
-  -- Improved auto-close behavior
-  local close_events = {'CursorMoved', 'CursorMovedI', 'BufLeave', 'InsertLeave', 'CompleteDone'}
+  -- More persistent auto-close behavior - only close on major events
+  -- Don't close on CursorMovedI (which fires when navigating completion menu)
+  local close_events = {'BufLeave', 'InsertLeave', 'CompleteDone'}
   vim.api.nvim_create_autocmd(close_events, {
     buffer = main_buf,
     once = true,
     callback = function()
-      debug_print("Auto-closing popup due to event")
+      debug_print("Auto-closing popup due to major event")
       close_popup()
     end
   })
   
-  -- Also close after a reasonable timeout
+  -- Longer timeout for better user experience
   vim.defer_fn(function()
     if current_popup.win and vim.api.nvim_win_is_valid(current_popup.win) then
       debug_print("Auto-closing popup due to timeout")
       close_popup()
     end
-  end, 5000) -- 5 seconds
+  end, 10000) -- 10 seconds timeout
 end
 
 -- Create signature popup for completion item
@@ -274,41 +247,38 @@ local function setup_nvim_cmp(main_buf)
 
   debug_print("Found nvim-cmp, setting up integration...")
 
-  -- Track menu state to reduce event spam
+  -- Track menu state and selected item to reduce unnecessary popup changes
   local menu_open = false
+  local last_selected_item = nil
 
   -- Hook into cmp selection events
   cmp.event:on('menu_opened', function()
     if not menu_open then
       debug_print("CMP menu opened")
       menu_open = true
-      -- Close any existing popup when menu opens
-      close_popup()
+      last_selected_item = nil
+      -- Don't close popup immediately - let the user navigate first
       
-      -- AUTOMATIC STATE LOGGING when menu opens
+      -- Auto-detect selection after menu stabilizes
       vim.defer_fn(function()
         if cmp.visible() then
-          debug_print("=== AUTO STATE DUMP (menu just opened) ===")
+          debug_print("=== AUTO STATE DUMP (menu stabilized) ===")
           
-          local entry = cmp.get_selected_entry()
+          local entry = cmp.get_selected_entry() or cmp.get_active_entry()
           local entries = cmp.get_entries()
-          local active_entry = cmp.get_active_entry()
           
-          debug_print("AUTO: get_selected_entry():", entry and entry.completion_item and entry.completion_item.label or "nil")
-          debug_print("AUTO: get_active_entry():", active_entry and active_entry.completion_item and active_entry.completion_item.label or "nil")
-          debug_print("AUTO: get_entries() count:", entries and #entries or "nil")
+          debug_print("Selected entry:", entry and entry.completion_item and entry.completion_item.label or "nil")
+          debug_print("Total entries:", entries and #entries or "nil")
           
-          if entries and #entries > 0 then
-            debug_print("AUTO: First few entries:")
-            for i, e in ipairs(entries) do
-              if i <= 3 then
-                debug_print("  ", i, ":", e.completion_item and e.completion_item.label or "no item", 
-                           "(kind:", e.completion_item and e.completion_item.kind or "unknown", ")")
-              end
-            end
+          -- Try to show signature for the first/selected item
+          local target_entry = entry or (entries and entries[1])
+          if target_entry and target_entry.completion_item then
+            debug_print("Auto-showing signature for:", target_entry.completion_item.label)
+            create_signature_popup(target_entry.completion_item, main_buf)
+            last_selected_item = target_entry.completion_item.label
           end
         end
-      end, 100) -- Small delay to ensure menu is fully populated
+      end, 150) -- Longer delay to let menu fully populate
     end
   end)
 
@@ -316,6 +286,7 @@ local function setup_nvim_cmp(main_buf)
     if menu_open then
       debug_print("CMP menu closed")
       menu_open = false
+      last_selected_item = nil
       -- Close popup when menu closes
       close_popup()
     end
@@ -324,28 +295,28 @@ local function setup_nvim_cmp(main_buf)
   cmp.event:on('complete_done', function()
     debug_print("CMP completion done")
     menu_open = false
+    last_selected_item = nil
     -- Close popup when completion is done
     close_popup()
   end)
 
-  -- Try to hook into confirmation/selection events
   cmp.event:on('confirm_done', function()
     debug_print("CMP confirm done")
     close_popup()
   end)
 
-  -- Use a different approach: listen for completion menu changes
+  -- Less aggressive cursor movement detection - only update on actual selection changes
   local group = vim.api.nvim_create_augroup("OtterCompletionSignatures" .. main_buf, { clear = true })
   
-  -- Use a more targeted approach with less frequent polling
+  -- Reduced frequency checking with debouncing
   local last_check_time = 0
-  local CHECK_INTERVAL_MS = 100
+  local CHECK_INTERVAL_MS = 200 -- Slower checking
   
   vim.api.nvim_create_autocmd('CursorMovedI', {
     buffer = main_buf,
     group = group,
     callback = function()
-      -- Throttle checks for performance
+      -- Throttle checks for performance and reduce flicker
       local now = vim.fn.reltimestr(vim.fn.reltime())
       local current_time = tonumber(now) * 1000
       if current_time - last_check_time < CHECK_INTERVAL_MS then
@@ -353,76 +324,36 @@ local function setup_nvim_cmp(main_buf)
       end
       last_check_time = current_time
 
-      debug_print("CursorMovedI fired (throttled)")
-      
       -- Only proceed if completion menu is visible
       if not cmp.visible() then
         if menu_open then
-          debug_print("CMP menu closed, updating state")
+          debug_print("CMP menu closed during cursor movement")
           menu_open = false
+          last_selected_item = nil
           close_popup()
         end
         return
       end
 
-      if not menu_open then
-        debug_print("CMP menu opened, updating state")
-        menu_open = true
-      end
-      
-      debug_print("CMP menu is visible, checking selected entry...")
-      
-      -- Get selected entry with multiple attempts and better debugging
+      -- Check if selection actually changed
       vim.defer_fn(function()
-        if not cmp.visible() then
-          debug_print("CMP menu closed during delay")
-          return
-        end
+        if not cmp.visible() then return end
         
-        -- Try different ways to get the selected entry
-        local entry = cmp.get_selected_entry()
+        local entry = cmp.get_selected_entry() or cmp.get_active_entry()
         local entries = cmp.get_entries()
-        local active_entry = cmp.get_active_entry()
-        
-        debug_print("Entry methods results:")
-        debug_print("  get_selected_entry():", entry and "found" or "nil")
-        debug_print("  get_entries() count:", entries and #entries or "nil")
-        debug_print("  get_active_entry():", active_entry and "found" or "nil")
-        
-        -- Try the active entry if selected entry is nil
-        local target_entry = entry or active_entry
+        local target_entry = entry or (entries and entries[1])
         
         if target_entry and target_entry.completion_item then
-          debug_print("Found completion item:", target_entry.completion_item.label)
-          debug_print("Item kind:", target_entry.completion_item.kind)
-          debug_print("Item detail:", target_entry.completion_item.detail or "none")
+          local current_item = target_entry.completion_item.label
           
-          -- Only show if different from last item to avoid flickering
-          if not current_popup.last_item or 
-             current_popup.last_item.label ~= target_entry.completion_item.label then
-            debug_print("Creating signature popup for:", target_entry.completion_item.label)
+          -- Only update if the selection actually changed
+          if current_item ~= last_selected_item then
+            debug_print("Selection changed from", last_selected_item or "nil", "to", current_item)
             create_signature_popup(target_entry.completion_item, main_buf)
-          else
-            debug_print("Same item as last time, skipping")
-          end
-        else
-          -- Try to get the first entry if nothing is explicitly selected
-          if entries and #entries > 0 then
-            local first_entry = entries[1]
-            if first_entry and first_entry.completion_item then
-              debug_print("Using first entry as fallback:", first_entry.completion_item.label)
-              if not current_popup.last_item or 
-                 current_popup.last_item.label ~= first_entry.completion_item.label then
-                create_signature_popup(first_entry.completion_item, main_buf)
-              end
-            else
-              debug_print("First entry has no completion_item")
-            end
-          else
-            debug_print("No entries found")
+            last_selected_item = current_item
           end
         end
-      end, 50)
+      end, 50) -- Shorter delay for responsiveness
     end
   })
 
