@@ -172,10 +172,24 @@ otterls.start = function(main_nr, completion)
           
           -- Debug logging for signature help
           if method == ms.textDocument_signatureHelp then
-            vim.print("otter-ls: processing signatureHelp request")
-            vim.print("position:", params.position)
-            vim.print("language:", lang)
-            vim.print("otter buffer:", otter_nr)
+            vim.print("=== OTTER SIGNATURE HELP DEBUG ===")
+            vim.print("1. Request received in otter-ls")
+            vim.print("   Position:", params.position)
+            vim.print("   Language detected:", lang)
+            vim.print("   Otter buffer:", otter_nr)
+            vim.print("   Main buffer:", main_nr)
+            
+            -- Check if language server supports signature help
+            local supports_sig_help = false
+            for _, client in pairs(otterclients) do
+              if client:supports_method(method) then
+                supports_sig_help = true
+                vim.print("   LS supports signatureHelp:", client.name)
+              end
+            end
+            if not supports_sig_help then
+              vim.print("   WARNING: No language server supports signatureHelp!")
+            end
           end
           
           -- send the request to the otter buffer
