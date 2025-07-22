@@ -50,78 +50,97 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
 
   -- Calculate popup dimensions
-  local popup_width = math.min(60, math.max(30, string.len(title) + 10))
-  local popup_height = math.min(10, #contents)
+  local popup_width = math.min(50, math.max(30, string.len(title) + 10))
+  local popup_height = math.min(8, #contents + 1)
   
-  -- Find the completion menu window to position relative to it
-  local completion_win = nil
+  -- Try to get completion menu position from nvim-cmp directly
   local completion_pos = nil
   local completion_width = nil
   
-  -- Look for floating windows that might be the completion menu
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    if vim.api.nvim_win_is_valid(win) then
-      local config = vim.api.nvim_win_get_config(win)
-      -- Check if this is a floating window positioned relative to cursor
-      if config.relative == 'cursor' and config.focusable ~= false then
-        -- Try to get the buffer content to see if it looks like completion
-        local win_buf = vim.api.nvim_win_get_buf(win)
-        local lines = vim.api.nvim_buf_get_lines(win_buf, 0, 3, false)
-        
-        -- Heuristic: if the window contains text that looks like completion items
-        -- (has multiple lines, or contains common completion patterns)
-        if #lines > 1 or (lines[1] and (string.find(lines[1], "Function") or string.find(lines[1], "Variable") or string.find(lines[1], "Class") or string.find(lines[1], "Method"))) then
-          completion_win = win
-          completion_pos = { config.row or 0, config.col or 0 }
-          completion_width = config.width or 30
-          debug_print("Found completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
-          break
+  local ok, cmp = pcall(require, 'cmp')
+  if ok and cmp.visible() then
+    -- Get completion menu info from cmp
+    local complete_state = cmp.get_state()
+    if complete_state and complete_state.get_state then
+      local state = complete_state:get_state()
+      if state and state.completion and state.completion.offset then
+        -- Try to get the position more directly from cmp
+        debug_print("nvim-cmp state found, trying to get position")
+      end
+    end
+    
+    -- Alternative approach: check cmp's internal view
+    local view = cmp.core.view
+    if view and view.completion and view.completion.win then
+      local completion_win = view.completion.win.win
+      if completion_win and vim.api.nvim_win_is_valid(completion_win) then
+        local config = vim.api.nvim_win_get_config(completion_win)
+        completion_pos = { config.row or 0, config.col or 0 }
+        completion_width = config.width or 30
+        debug_print("Found cmp completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
+      end
+    end
+  end
+  
+  -- Fallback: scan for floating windows if cmp method failed
+  if not completion_pos then
+    debug_print("Scanning for completion windows...")
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_is_valid(win) then
+        local config = vim.api.nvim_win_get_config(win)
+        -- Check if this is a floating window positioned relative to cursor
+        if config.relative == 'cursor' and config.row ~= nil and config.col ~= nil then
+          local win_buf = vim.api.nvim_win_get_buf(win)
+          local lines = vim.api.nvim_buf_get_lines(win_buf, 0, 5, false)
+          
+          -- More specific heuristic: check if it contains completion-like content
+          local looks_like_completion = false
+          for _, line in ipairs(lines) do
+            if line and (string.match(line, "Function") or string.match(line, "Variable") or 
+                        string.match(line, "Class") or string.match(line, "Method") or
+                        string.match(line, "print") or string.match(line, "numpy")) then
+              looks_like_completion = true
+              break
+            end
+          end
+          
+          if looks_like_completion then
+            completion_pos = { config.row, config.col }
+            completion_width = config.width or 30
+            debug_print("Found completion-like window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
+            break
+          end
         end
       end
     end
   end
   
-  -- Default positioning (fallback if we can't find completion menu)
+  -- Calculate position
   local win_opts = {
     relative = 'cursor',
     width = popup_width,
     height = popup_height,
-    row = 1,
-    col = 42, -- Fallback position
     style = 'minimal',
     border = 'rounded',
     title = is_signature and ' Signature ' or ' Preview ',
     title_pos = 'center',
-    zindex = 1000,
+    zindex = 1001, -- Higher than completion menu
     anchor = 'NW'
   }
   
-  -- If we found the completion menu, position relative to it
-  if completion_win and completion_pos and completion_width then
-    -- Position our popup to the right of the completion menu
-    win_opts.relative = 'cursor'
-    win_opts.row = completion_pos[1] -- Same row as completion menu
-    win_opts.col = completion_pos[2] + completion_width + 1 -- Right after completion menu with 1 char gap
-    debug_print("Positioning popup relative to completion menu at:", win_opts.row, win_opts.col)
+  if completion_pos and completion_width then
+    -- Position to the right of the completion menu
+    win_opts.row = completion_pos[1]
+    win_opts.col = completion_pos[2] + completion_width + 2 -- Small gap
+    debug_print("Positioning popup at:", win_opts.row, win_opts.col, "relative to completion menu")
   else
-    -- Fallback: try to get completion menu info from nvim-cmp if available
-    local ok, cmp = pcall(require, 'cmp')
-    if ok and cmp.visible() then
-      -- Try to get completion menu dimensions from cmp
-      local cmp_config = cmp.get_config()
-      if cmp_config and cmp_config.window and cmp_config.window.completion then
-        local completion_opts = cmp_config.window.completion
-        if completion_opts.col_offset then
-          win_opts.col = (completion_opts.col_offset or 0) + (completion_opts.max_width or 40) + 1
-          debug_print("Using nvim-cmp config for positioning at col:", win_opts.col)
-        end
-      end
-    end
-    
-    debug_print("Using fallback positioning at:", win_opts.row, win_opts.col)
+    -- Simple fallback: position to the right of cursor
+    win_opts.row = 0
+    win_opts.col = 1
+    debug_print("Using simple fallback positioning")
   end
   
-  debug_print("Creating popup with adaptive positioning")
+  debug_print("Creating popup with opts:", vim.inspect(win_opts))
   
   local popup_win = vim.api.nvim_open_win(buf, false, win_opts)
   vim.api.nvim_win_set_option(popup_win, 'wrap', true)
@@ -132,27 +151,11 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   current_popup.buf = buf
   current_popup.last_item = completion_item
   
-  debug_print("Signature popup created with adaptive positioning")
+  debug_print("Signature popup created")
   
-  -- More persistent auto-close behavior - only close on major events
-  -- Don't close on CursorMovedI (which fires when navigating completion menu)
-  local close_events = {'BufLeave', 'InsertLeave', 'CompleteDone'}
-  vim.api.nvim_create_autocmd(close_events, {
-    buffer = main_buf,
-    once = true,
-    callback = function()
-      debug_print("Auto-closing popup due to major event")
-      close_popup()
-    end
-  })
-  
-  -- Longer timeout for better user experience
-  vim.defer_fn(function()
-    if current_popup.win and vim.api.nvim_win_is_valid(current_popup.win) then
-      debug_print("Auto-closing popup due to timeout")
-      close_popup()
-    end
-  end, 10000) -- 10 seconds timeout
+  -- Only close when completion item changes - no other auto-close events
+  -- The popup will be closed when a new item is selected or menu closes
+  debug_print("Popup will persist until completion item changes")
 end
 
 -- Create signature popup for completion item
@@ -289,7 +292,14 @@ local function create_signature_popup(completion_item, main_buf)
   end)
 end
 
--- Hook into nvim-cmp if available
+-- Helper to check if a completion item is function-like
+local function is_function_like(item)
+  return item.kind == vim.lsp.protocol.CompletionItemKind.Function or 
+         item.kind == vim.lsp.protocol.CompletionItemKind.Method or
+         item.kind == vim.lsp.protocol.CompletionItemKind.Constructor
+end
+
+-- Setup nvim-cmp integration
 local function setup_nvim_cmp(main_buf)
   local ok, cmp = pcall(require, 'cmp')
   if not ok then
@@ -299,113 +309,99 @@ local function setup_nvim_cmp(main_buf)
 
   debug_print("Found nvim-cmp, setting up integration...")
 
-  -- Track menu state and selected item to reduce unnecessary popup changes
-  local menu_open = false
+  -- Track the last selected item to avoid flickering
   local last_selected_item = nil
 
-  -- Hook into cmp selection events
-  cmp.event:on('menu_opened', function()
-    if not menu_open then
-      debug_print("CMP menu opened")
-      menu_open = true
-      last_selected_item = nil
-      -- Don't close popup immediately - let the user navigate first
-      
-      -- Auto-detect selection after menu stabilizes
-      vim.defer_fn(function()
-        if cmp.visible() then
-          debug_print("=== AUTO STATE DUMP (menu stabilized) ===")
-          
-          local entry = cmp.get_selected_entry() or cmp.get_active_entry()
-          local entries = cmp.get_entries()
-          
-          debug_print("Selected entry:", entry and entry.completion_item and entry.completion_item.label or "nil")
-          debug_print("Total entries:", entries and #entries or "nil")
-          
-          -- Try to show signature for the first/selected item
-          local target_entry = entry or (entries and entries[1])
-          if target_entry and target_entry.completion_item then
-            debug_print("Auto-showing signature for:", target_entry.completion_item.label)
-            create_signature_popup(target_entry.completion_item, main_buf)
-            last_selected_item = target_entry.completion_item.label
-          end
-        end
-      end, 150) -- Longer delay to let menu fully populate
+  -- Helper to get the currently selected completion item
+  local function get_current_item()
+    if not cmp.visible() then
+      return nil
     end
+
+    -- Try multiple methods to get the selected entry
+    local entry = cmp.get_selected_entry()
+    if entry then
+      debug_print("got selected entry via get_selected_entry")
+      return entry.completion_item
+    end
+
+    entry = cmp.get_active_entry()
+    if entry then
+      debug_print("got selected entry via get_active_entry")
+      return entry.completion_item
+    end
+
+    -- Fallback: get first entry
+    local entries = cmp.get_entries()
+    if entries and #entries > 0 then
+      debug_print("using first entry as fallback")
+      return entries[1].completion_item
+    end
+
+    return nil
+  end
+
+  -- Handle completion item changes
+  local function handle_item_change()
+    if not cmp.visible() then
+      debug_print("CMP menu not visible, closing popup")
+      close_popup()
+      last_selected_item = nil
+      return
+    end
+
+    local current_item = get_current_item()
+    if not current_item then
+      debug_print("No current item found")
+      return
+    end
+
+    -- Check if the item actually changed
+    if last_selected_item and 
+       last_selected_item.label == current_item.label and
+       last_selected_item.kind == current_item.kind then
+      debug_print("Same item still selected, no change needed")
+      return
+    end
+
+    debug_print("Item changed from", last_selected_item and last_selected_item.label or "none", "to", current_item.label)
+    last_selected_item = current_item
+
+    -- Only show popup for function-like items
+    if is_function_like(current_item) then
+      create_signature_popup(current_item, main_buf)
+    else
+      debug_print("Item is not function-like, closing popup")
+      close_popup()
+    end
+  end
+
+  -- Set up cmp event handlers
+  cmp.event:on('menu_opened', function()
+    debug_print("CMP menu opened")
+    -- Small delay to let cmp settle
+    vim.defer_fn(handle_item_change, 50)
   end)
 
   cmp.event:on('menu_closed', function()
-    if menu_open then
-      debug_print("CMP menu closed")
-      menu_open = false
-      last_selected_item = nil
-      -- Close popup when menu closes
-      close_popup()
-    end
+    debug_print("CMP menu closed")
+    close_popup()
+    last_selected_item = nil
   end)
 
   cmp.event:on('complete_done', function()
     debug_print("CMP completion done")
-    menu_open = false
+    close_popup()
     last_selected_item = nil
-    -- Close popup when completion is done
-    close_popup()
   end)
 
-  cmp.event:on('confirm_done', function()
-    debug_print("CMP confirm done")
-    close_popup()
-  end)
-
-  -- Less aggressive cursor movement detection - only update on actual selection changes
-  local group = vim.api.nvim_create_augroup("OtterCompletionSignatures" .. main_buf, { clear = true })
-  
-  -- Reduced frequency checking with debouncing
-  local last_check_time = 0
-  local CHECK_INTERVAL_MS = 200 -- Slower checking
-  
+  -- Handle cursor movement in completion menu
   vim.api.nvim_create_autocmd('CursorMovedI', {
     buffer = main_buf,
-    group = group,
     callback = function()
-      -- Throttle checks for performance and reduce flicker
-      local now = vim.fn.reltimestr(vim.fn.reltime())
-      local current_time = tonumber(now) * 1000
-      if current_time - last_check_time < CHECK_INTERVAL_MS then
-        return
+      if cmp.visible() then
+        handle_item_change()
       end
-      last_check_time = current_time
-
-      -- Only proceed if completion menu is visible
-      if not cmp.visible() then
-        if menu_open then
-          debug_print("CMP menu closed during cursor movement")
-          menu_open = false
-          last_selected_item = nil
-          close_popup()
-        end
-        return
-      end
-
-      -- Check if selection actually changed
-      vim.defer_fn(function()
-        if not cmp.visible() then return end
-        
-        local entry = cmp.get_selected_entry() or cmp.get_active_entry()
-        local entries = cmp.get_entries()
-        local target_entry = entry or (entries and entries[1])
-        
-        if target_entry and target_entry.completion_item then
-          local current_item = target_entry.completion_item.label
-          
-          -- Only update if the selection actually changed
-          if current_item ~= last_selected_item then
-            debug_print("Selection changed from", last_selected_item or "nil", "to", current_item)
-            create_signature_popup(target_entry.completion_item, main_buf)
-            last_selected_item = current_item
-          end
-        end
-      end, 50) -- Shorter delay for responsiveness
     end
   })
 
