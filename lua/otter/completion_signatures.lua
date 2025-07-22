@@ -58,7 +58,9 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   local completion_width = nil
   
   local ok, cmp = pcall(require, 'cmp')
-  if ok and cmp.visible() then
+  if ok then
+    local visible_ok, is_visible = pcall(cmp.visible)
+    if visible_ok and is_visible then
     -- Get completion menu info from cmp
     local complete_state = cmp.get_state()
     if complete_state and complete_state.get_state then
@@ -79,6 +81,7 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
         completion_width = config.width or 30
         debug_print("Found cmp completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
       end
+    end
     end
   end
   
@@ -314,7 +317,8 @@ local function setup_nvim_cmp(main_buf)
 
   -- Helper to get the currently selected completion item
   local function get_current_item()
-    if not cmp.visible() then
+    local visible_ok, is_visible = pcall(cmp.visible)
+    if not visible_ok or not is_visible then
       return nil
     end
 
@@ -343,7 +347,8 @@ local function setup_nvim_cmp(main_buf)
 
   -- Handle completion item changes
   local function handle_item_change()
-    if not cmp.visible() then
+    local visible_ok, is_visible = pcall(cmp.visible)
+    if not visible_ok or not is_visible then
       debug_print("CMP menu not visible, closing popup")
       close_popup()
       last_selected_item = nil
@@ -399,7 +404,8 @@ local function setup_nvim_cmp(main_buf)
   vim.api.nvim_create_autocmd('CursorMovedI', {
     buffer = main_buf,
     callback = function()
-      if cmp.visible() then
+      local visible_ok, is_visible = pcall(cmp.visible)
+      if visible_ok and is_visible then
         handle_item_change()
       end
     end
@@ -449,7 +455,9 @@ function M.setup(main_buf)
       debug_print("=== INSERT MODE TEST TRIGGERED ===")
       
       local ok, cmp = pcall(require, 'cmp')
-      if ok and cmp.visible() then
+      if ok then
+        local visible_ok, is_visible = pcall(cmp.visible)
+        if visible_ok and is_visible then
         debug_print("CMP menu visible, testing all methods...")
         
         local entry = cmp.get_selected_entry()
@@ -477,8 +485,11 @@ function M.setup(main_buf)
         else
           debug_print("NO SUITABLE ENTRY FOUND")
         end
+        else
+          debug_print("CMP menu not visible")
+        end
       else
-        debug_print("CMP menu not visible or cmp not available")
+        debug_print("CMP not available")
       end
       
       return '' -- Return empty string to not insert anything
@@ -517,7 +528,8 @@ function M.show_signature_for_current_item()
   local ok, cmp = pcall(require, 'cmp')
   if ok then
     debug_print("Checking nvim-cmp...")
-    if cmp.visible() then
+    local visible_ok, is_visible = pcall(cmp.visible)
+    if visible_ok and is_visible then
       local entry = cmp.get_selected_entry()
       debug_print("Selected entry:", entry and entry.completion_item and entry.completion_item.label or "none")
       if entry and entry.completion_item then
