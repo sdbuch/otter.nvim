@@ -52,33 +52,69 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
-  -- Don't intercept signature help responses - let them use Neovim's default display
-  -- This gives us pyright's native formatting with parameter highlighting
+  -- Use Neovim's native signature help display (like pyright)
   
   if err or not response or not response.signatures or #response.signatures == 0 then
-    return err, response, ctx -- Pass through errors and empty responses
+    return -- Don't display anything for errors or empty responses
   end
+  
+  vim.print("Displaying signature help:", #response.signatures, "signatures")
   
   -- Transform context to point to main buffer for proper display
-  if ctx.params and ctx.params.otter then
-    local main_buf = ctx.params.otter.main_nr
-    local transformed_ctx = {
-      method = ctx.method or 'textDocument/signatureHelp',
-      bufnr = main_buf,
-      client_id = ctx.client_id,
-      params = {
-        textDocument = { uri = ctx.params.otter.main_uri },
-        position = ctx.params.position,
-        context = ctx.params.context
-      }
-    }
-    
-    -- Return the transformed context so the default handler displays properly
-    return err, response, transformed_ctx
-  end
+  local main_buf = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf()
   
-  -- If no otter context, pass through unchanged
-  return err, response, ctx
+  -- Use vim.lsp.util.open_floating_preview to display signature help
+  -- This gives us the same native display as pyright without recursion issues
+  if response.signatures and #response.signatures > 0 then
+    local signature = response.signatures[1]
+    local contents = {}
+    
+    -- Format the signature like pyright does
+    table.insert(contents, signature.label)
+    
+    -- Add parameter documentation if available
+    if signature.documentation then
+      table.insert(contents, "")
+      if type(signature.documentation) == "string" then
+        table.insert(contents, signature.documentation)
+      elseif signature.documentation.value then
+        table.insert(contents, signature.documentation.value)
+      end
+    end
+    
+    -- Add active parameter highlighting if available
+    local active_param = signature.activeParameter or 0
+    if signature.parameters and signature.parameters[active_param + 1] then
+      local param = signature.parameters[active_param + 1]
+      if param.documentation then
+        table.insert(contents, "")
+        table.insert(contents, "**" .. param.label .. "**")
+        if type(param.documentation) == "string" then
+          table.insert(contents, param.documentation)
+        elseif param.documentation.value then
+          table.insert(contents, param.documentation.value)
+        end
+      end
+    end
+    
+    -- Display using the same method as default signature help
+    local bufnr, winnr = vim.lsp.util.open_floating_preview(contents, "markdown", {
+      border = "rounded",
+      focusable = false,
+      close_events = { "CursorMoved", "BufHidden", "InsertCharPre" },
+    })
+    
+    -- Make sure it appears in the right buffer context
+    if bufnr and main_buf ~= vim.api.nvim_get_current_buf() then
+      -- Switch context briefly to ensure proper positioning
+      local current_win = vim.api.nvim_get_current_win()
+      local main_wins = vim.fn.win_findbuf(main_buf)
+      if #main_wins > 0 then
+        vim.api.nvim_set_current_win(main_wins[1])
+        vim.api.nvim_set_current_win(current_win)
+      end
+    end
+  end
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
