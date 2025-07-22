@@ -23,6 +23,12 @@ local otterls = {}
 --- @return integer? client_id
 otterls.start = function(main_nr, completion)
   local main_uri = vim.uri_from_bufnr(main_nr)
+  
+  vim.print("=== STARTING OTTER-LS ===")
+  vim.print("Main buffer:", main_nr)
+  vim.print("Main URI:", main_uri)
+  vim.print("Completion enabled:", completion)
+  
   local client_id = vim.lsp.start({
     name = "otter-ls" .. "[" .. main_nr .. "]",
     capabilities = capabilities,
@@ -90,6 +96,9 @@ otterls.start = function(main_nr, completion)
                 version = "2.0.0",
               },
             }
+
+            vim.print("=== OTTER-LS INITIALIZE RESULT ===")
+            vim.print("Signature help provider:", vim.inspect(initializeResult.capabilities.signatureHelpProvider))
 
             -- default handler for initialize
             handler(nil, initializeResult, params.context)
@@ -209,7 +218,7 @@ otterls.start = function(main_nr, completion)
       }
       return members
     end,
-    init_options = {},
+    init_options = {}
     ---@param params lsp.ConfigurationParams
     ---@param config table
     before_init = function(params, config)
@@ -231,6 +240,20 @@ otterls.start = function(main_nr, completion)
       -- nothing to be done
     end,
   })
+
+  vim.print("=== OTTER-LS CLIENT CREATED ===")
+  vim.print("Client ID:", client_id)
+  if client_id then
+    local client = vim.lsp.get_client_by_id(client_id)
+    if client then
+      vim.print("Client name:", client.name)
+      vim.print("Client supports signature help:", client.supports_method('textDocument/signatureHelp'))
+    else
+      vim.print("ERROR: Client not found!")
+    end
+  else
+    vim.print("ERROR: Failed to create client!")
+  end
 
   return client_id
 end

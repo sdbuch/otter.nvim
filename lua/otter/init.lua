@@ -286,6 +286,26 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     vim.notify_once("[otter] activation of otter-ls failed", vim.log.levels.WARN, {})
   end
 
+  -- start LSP server hover border configuration
+  if OtterConfig.lsp.hover.border ~= nil then
+    vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, {
+      border = OtterConfig.lsp.hover.border,
+    })
+  end
+  
+  -- Debug: Show what clients are attached to the main buffer
+  vim.print("=== MAIN BUFFER CLIENTS DEBUG ===")
+  vim.print("Main buffer number:", main_nr)
+  local main_clients = vim.lsp.get_clients({ bufnr = main_nr })
+  vim.print("Number of clients attached to main buffer:", #main_clients)
+  for _, client in ipairs(main_clients) do
+    vim.print("Client:", client.name, "ID:", client.id)
+    vim.print("  Supports signature help:", client.supports_method('textDocument/signatureHelp'))
+    if client.server_capabilities and client.server_capabilities.signatureHelpProvider then
+      vim.print("  Signature help triggers:", vim.inspect(client.server_capabilities.signatureHelpProvider.triggerCharacters))
+    end
+  end
+
   -- debugging
   if OtterConfig.debug == true then
     -- listen to lsp requests and notifications
