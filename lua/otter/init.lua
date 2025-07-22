@@ -337,26 +337,9 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
               vim.print("Triggered by character:", char)
               vim.print("Language context:", lang)
               
-              -- Send signature help request directly to otter-ls with proper context
-              local pos = vim.api.nvim_win_get_cursor(0)
-              local params = {
-                textDocument = { uri = vim.uri_from_bufnr(main_nr) },
-                position = { line = pos[1] - 1, character = pos[2] },
-                context = {
-                  triggerKind = 2, -- SignatureHelpTriggerKind.TriggerCharacter
-                  triggerCharacter = char,
-                  isRetrigger = false
-                }
-              }
-              
-              -- Send request directly to otter-ls
-              otter_client.request('textDocument/signatureHelp', params, function(err, result, ctx)
-                -- Handle the response
-                local handlers = require("otter.lsp.handlers")
-                if handlers['textDocument/signatureHelp'] then
-                  handlers['textDocument/signatureHelp'](err, result, ctx)
-                end
-              end)
+              -- Simply call the standard signature help function
+              -- otter-ls will handle context injection and proper routing
+              vim.lsp.buf.signature_help()
             end)
           end
         end
