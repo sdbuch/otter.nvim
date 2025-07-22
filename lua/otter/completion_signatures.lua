@@ -182,64 +182,153 @@ local function setup_nvim_cmp(main_buf)
 
   debug_print("Found nvim-cmp, setting up integration...")
 
+  -- Track menu state to reduce event spam
+  local menu_open = false
+
   -- Hook into cmp selection events
   cmp.event:on('menu_opened', function()
-    debug_print("CMP menu opened")
-    -- Close any existing popup when menu opens
-    close_popup()
+    if not menu_open then
+      debug_print("CMP menu opened")
+      menu_open = true
+      -- Close any existing popup when menu opens
+      close_popup()
+      
+      -- AUTOMATIC STATE LOGGING when menu opens
+      vim.defer_fn(function()
+        if cmp.visible() then
+          debug_print("=== AUTO STATE DUMP (menu just opened) ===")
+          
+          local entry = cmp.get_selected_entry()
+          local entries = cmp.get_entries()
+          local active_entry = cmp.get_active_entry()
+          
+          debug_print("AUTO: get_selected_entry():", entry and entry.completion_item and entry.completion_item.label or "nil")
+          debug_print("AUTO: get_active_entry():", active_entry and active_entry.completion_item and active_entry.completion_item.label or "nil")
+          debug_print("AUTO: get_entries() count:", entries and #entries or "nil")
+          
+          if entries and #entries > 0 then
+            debug_print("AUTO: First few entries:")
+            for i, e in ipairs(entries) do
+              if i <= 3 then
+                debug_print("  ", i, ":", e.completion_item and e.completion_item.label or "no item", 
+                           "(kind:", e.completion_item and e.completion_item.kind or "unknown", ")")
+              end
+            end
+          end
+        end
+      end, 100) -- Small delay to ensure menu is fully populated
+    end
   end)
 
   cmp.event:on('menu_closed', function()
-    debug_print("CMP menu closed")
-    -- Close popup when menu closes
-    close_popup()
+    if menu_open then
+      debug_print("CMP menu closed")
+      menu_open = false
+      -- Close popup when menu closes
+      close_popup()
+    end
   end)
 
   cmp.event:on('complete_done', function()
     debug_print("CMP completion done")
+    menu_open = false
     -- Close popup when completion is done
     close_popup()
   end)
 
-  -- Use autocmd to detect cursor movement in insert mode during completion
+  -- Try to hook into confirmation/selection events
+  cmp.event:on('confirm_done', function()
+    debug_print("CMP confirm done")
+    close_popup()
+  end)
+
+  -- Use a different approach: listen for completion menu changes
   local group = vim.api.nvim_create_augroup("OtterCompletionSignatures" .. main_buf, { clear = true })
+  
+  -- Use a more targeted approach with less frequent polling
+  local last_check_time = 0
+  local CHECK_INTERVAL_MS = 100
   
   vim.api.nvim_create_autocmd('CursorMovedI', {
     buffer = main_buf,
     group = group,
     callback = function()
-      debug_print("CursorMovedI fired")
+      -- Throttle checks for performance
+      local now = vim.fn.reltimestr(vim.fn.reltime())
+      local current_time = tonumber(now) * 1000
+      if current_time - last_check_time < CHECK_INTERVAL_MS then
+        return
+      end
+      last_check_time = current_time
+
+      debug_print("CursorMovedI fired (throttled)")
       
       -- Only proceed if completion menu is visible
       if not cmp.visible() then
-        debug_print("CMP menu not visible, closing popup")
-        close_popup()
+        if menu_open then
+          debug_print("CMP menu closed, updating state")
+          menu_open = false
+          close_popup()
+        end
         return
+      end
+
+      if not menu_open then
+        debug_print("CMP menu opened, updating state")
+        menu_open = true
       end
       
       debug_print("CMP menu is visible, checking selected entry...")
       
-      -- Get selected entry after a short delay to ensure it's updated
+      -- Get selected entry with multiple attempts and better debugging
       vim.defer_fn(function()
         if not cmp.visible() then
           debug_print("CMP menu closed during delay")
           return
         end
         
+        -- Try different ways to get the selected entry
         local entry = cmp.get_selected_entry()
-        debug_print("Selected entry:", entry and entry.completion_item and entry.completion_item.label or "none")
+        local entries = cmp.get_entries()
+        local active_entry = cmp.get_active_entry()
         
-        if entry and entry.completion_item then
+        debug_print("Entry methods results:")
+        debug_print("  get_selected_entry():", entry and "found" or "nil")
+        debug_print("  get_entries() count:", entries and #entries or "nil")
+        debug_print("  get_active_entry():", active_entry and "found" or "nil")
+        
+        -- Try the active entry if selected entry is nil
+        local target_entry = entry or active_entry
+        
+        if target_entry and target_entry.completion_item then
+          debug_print("Found completion item:", target_entry.completion_item.label)
+          debug_print("Item kind:", target_entry.completion_item.kind)
+          debug_print("Item detail:", target_entry.completion_item.detail or "none")
+          
           -- Only show if different from last item to avoid flickering
           if not current_popup.last_item or 
-             current_popup.last_item.label ~= entry.completion_item.label then
-            debug_print("Creating signature popup for:", entry.completion_item.label)
-            create_signature_popup(entry.completion_item, main_buf)
+             current_popup.last_item.label ~= target_entry.completion_item.label then
+            debug_print("Creating signature popup for:", target_entry.completion_item.label)
+            create_signature_popup(target_entry.completion_item, main_buf)
           else
             debug_print("Same item as last time, skipping")
           end
         else
-          debug_print("No completion item found")
+          -- Try to get the first entry if nothing is explicitly selected
+          if entries and #entries > 0 then
+            local first_entry = entries[1]
+            if first_entry and first_entry.completion_item then
+              debug_print("Using first entry as fallback:", first_entry.completion_item.label)
+              if not current_popup.last_item or 
+                 current_popup.last_item.label ~= first_entry.completion_item.label then
+                create_signature_popup(first_entry.completion_item, main_buf)
+              end
+            else
+              debug_print("First entry has no completion_item")
+            end
+          else
+            debug_print("No entries found")
+          end
         end
       end, 50)
     end
@@ -277,6 +366,53 @@ function M.setup(main_buf)
   
   if cmp_setup then
     vim.print("Completion signatures: nvim-cmp integration enabled")
+    
+    -- Add insert mode key mapping for testing (Ctrl+K)
+    vim.keymap.set('i', '<C-k>', function()
+      debug_print("=== INSERT MODE TEST TRIGGERED ===")
+      
+      local ok, cmp = pcall(require, 'cmp')
+      if ok and cmp.visible() then
+        debug_print("CMP menu visible, testing all methods...")
+        
+        local entry = cmp.get_selected_entry()
+        local entries = cmp.get_entries()  
+        local active_entry = cmp.get_active_entry()
+        
+        debug_print("=== DETAILED STATE DUMP ===")
+        debug_print("get_selected_entry():", entry and vim.inspect(entry.completion_item) or "nil")
+        debug_print("get_active_entry():", active_entry and vim.inspect(active_entry.completion_item) or "nil")
+        debug_print("get_entries() count:", entries and #entries or "nil")
+        
+        if entries and #entries > 0 then
+          for i, e in ipairs(entries) do
+            if i <= 3 then -- Only show first 3 for brevity
+              debug_print("Entry", i, ":", e.completion_item and e.completion_item.label or "no item")
+            end
+          end
+        end
+        
+        -- Force create popup for testing
+        local target_entry = entry or active_entry or (entries and entries[1])
+        if target_entry and target_entry.completion_item then
+          debug_print("FORCE CREATING POPUP for:", target_entry.completion_item.label)
+          create_signature_popup(target_entry.completion_item, main_buf)
+        else
+          debug_print("NO SUITABLE ENTRY FOUND")
+        end
+      else
+        debug_print("CMP menu not visible or cmp not available")
+      end
+      
+      return '' -- Return empty string to not insert anything
+    end, { 
+      buffer = main_buf,
+      expr = true, -- Important: makes it an expression mapping
+      desc = "Test completion signature popup (Ctrl+K in insert mode)" 
+    })
+    
+    vim.print("Completion signatures: Press Ctrl+K in insert mode to test while menu is open")
+    
   elseif blink_setup then
     vim.print("Completion signatures: blink.cmp detected (built-in docs)")
   else
