@@ -8,9 +8,6 @@ local fn = require("otter.tools.functions")
 local ms = vim.lsp.protocol.Methods
 local modify_position = require("otter.keeper").modify_position
 
--- Load config for debug logging
-local config = require("otter.config")
-
 local function filter_one_or_many(response, filter)
   if #response == 0 then
     return filter(response)
@@ -56,7 +53,7 @@ end
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   -- Debug logging
-  if config.debug then
+  if require("otter.config").debug then
     vim.print("=== OTTER SIGNATURE HELP RESPONSE ===")
     vim.print("2. Response received from language server")
     if err then
@@ -84,7 +81,7 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   -- pretend the response is coming from the main buffer
   ctx.params.textDocument.uri = ctx.params.otter.main_uri
 
-  if config.debug then
+  if require("otter.config").debug then
     vim.print("3. Forwarding response to default handler")
   end
 
