@@ -56,19 +56,37 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   vim.print("Response received:", response ~= nil)
   if response then
     vim.print("Signatures count:", response.signatures and #response.signatures or 0)
+    if response.signatures and #response.signatures > 0 then
+      vim.print("First signature:", response.signatures[1].label)
+    end
+    vim.print("Active signature:", response.activeSignature)
+    vim.print("Active parameter:", response.activeParameter)
+    vim.print("Full response:", vim.inspect(response))
   end
   
   if not response then
     return err, response, ctx
   end
 
+  -- Store original URI for debugging
+  local original_uri = ctx.params.textDocument.uri
+  
   -- pretend the response is coming from the main buffer
   ctx.params.textDocument.uri = ctx.params.otter.main_uri
+  -- Also update the buffer number to the main buffer
+  ctx.bufnr = ctx.params.otter.main_nr
+  
+  vim.print("Original URI:", original_uri)
+  vim.print("Modified URI:", ctx.params.otter.main_uri)
+  vim.print("Buffer number:", ctx.bufnr)
+  vim.print("Method:", ctx.method)
   
   vim.print("Calling default signature_help handler...")
 
   -- Call the default signature_help handler directly to ensure popup display
-  return vim.lsp.handlers.signature_help(err, response, ctx)
+  local result = vim.lsp.handlers.signature_help(err, response, ctx)
+  vim.print("Default handler returned:", result)
+  return result
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
