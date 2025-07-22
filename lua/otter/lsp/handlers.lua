@@ -48,6 +48,21 @@ M[ms.textDocument_inlayHint] = function(err, response, ctx)
   return err, response, ctx
 end
 
+---@param err lsp.ResponseError?
+---@param response lsp.SignatureHelp
+---@param ctx lsp.HandlerContext
+M[ms.textDocument_signatureHelp] = function(err, response, ctx)
+  if not response then
+    return err, response, ctx
+  end
+
+  -- pretend the response is coming from the main buffer
+  ctx.params.textDocument.uri = ctx.params.otter.main_uri
+
+  -- pass modified response on to the default handler
+  return err, response, ctx
+end
+
 M[ms.textDocument_definition] = function(err, response, ctx)
   if not response then
     return
