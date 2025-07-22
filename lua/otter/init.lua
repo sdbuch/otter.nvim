@@ -287,7 +287,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
   end
 
   -- start LSP server hover border configuration
-  if OtterConfig.lsp.hover.border ~= nil then
+  if OtterConfig.lsp.hover and OtterConfig.lsp.hover.border ~= nil then
     vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, {
       border = OtterConfig.lsp.hover.border,
     })
