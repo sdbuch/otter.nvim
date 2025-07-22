@@ -8,8 +8,8 @@ local fn = require("otter.tools.functions")
 local ms = vim.lsp.protocol.Methods
 local modify_position = require("otter.keeper").modify_position
 
--- Load OtterConfig for debug logging
-OtterConfig = require("otter.config")
+-- Load config for debug logging
+local config = require("otter.config")
 
 local function filter_one_or_many(response, filter)
   if #response == 0 then
@@ -56,7 +56,7 @@ end
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   -- Debug logging
-  if OtterConfig.debug then
+  if config.debug then
     vim.print("otter signatureHelp handler called")
     vim.print("err:", err)
     vim.print("response:", response)
