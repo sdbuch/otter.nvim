@@ -53,23 +53,75 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   local popup_width = math.min(60, math.max(30, string.len(title) + 10))
   local popup_height = math.min(10, #contents)
   
-  -- Position adjacent to completion menu (like auto-import popup)
-  -- The completion menu appears below the cursor, so we position to the right of it
+  -- Find the completion menu window to position relative to it
+  local completion_win = nil
+  local completion_pos = nil
+  local completion_width = nil
+  
+  -- Look for floating windows that might be the completion menu
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_is_valid(win) then
+      local config = vim.api.nvim_win_get_config(win)
+      -- Check if this is a floating window positioned relative to cursor
+      if config.relative == 'cursor' and config.focusable ~= false then
+        -- Try to get the buffer content to see if it looks like completion
+        local win_buf = vim.api.nvim_win_get_buf(win)
+        local lines = vim.api.nvim_buf_get_lines(win_buf, 0, 3, false)
+        
+        -- Heuristic: if the window contains text that looks like completion items
+        -- (has multiple lines, or contains common completion patterns)
+        if #lines > 1 or (lines[1] and string.find(lines[1], "Function\|Variable\|Class\|Method")) then
+          completion_win = win
+          completion_pos = { config.row or 0, config.col or 0 }
+          completion_width = config.width or 30
+          debug_print("Found completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
+          break
+        end
+      end
+    end
+  end
+  
+  -- Default positioning (fallback if we can't find completion menu)
   local win_opts = {
     relative = 'cursor',
     width = popup_width,
     height = popup_height,
-    row = 1, -- Below cursor (where completion menu starts)
-    col = 35, -- To the right of completion menu (completion menu is ~30 chars wide)
+    row = 1,
+    col = 42, -- Fallback position
     style = 'minimal',
     border = 'rounded',
     title = is_signature and ' Signature ' or ' Preview ',
     title_pos = 'center',
-    zindex = 1000, -- High z-index to appear above other popups
-    anchor = 'NW' -- Northwest anchor for consistent positioning
+    zindex = 1000,
+    anchor = 'NW'
   }
   
-  debug_print("Creating popup adjacent to completion menu at:", win_opts.row, win_opts.col)
+  -- If we found the completion menu, position relative to it
+  if completion_win and completion_pos and completion_width then
+    -- Position our popup to the right of the completion menu
+    win_opts.relative = 'cursor'
+    win_opts.row = completion_pos[1] -- Same row as completion menu
+    win_opts.col = completion_pos[2] + completion_width + 1 -- Right after completion menu with 1 char gap
+    debug_print("Positioning popup relative to completion menu at:", win_opts.row, win_opts.col)
+  else
+    -- Fallback: try to get completion menu info from nvim-cmp if available
+    local ok, cmp = pcall(require, 'cmp')
+    if ok and cmp.visible() then
+      -- Try to get completion menu dimensions from cmp
+      local cmp_config = cmp.get_config()
+      if cmp_config and cmp_config.window and cmp_config.window.completion then
+        local completion_opts = cmp_config.window.completion
+        if completion_opts.col_offset then
+          win_opts.col = (completion_opts.col_offset or 0) + (completion_opts.max_width or 40) + 1
+          debug_print("Using nvim-cmp config for positioning at col:", win_opts.col)
+        end
+      end
+    end
+    
+    debug_print("Using fallback positioning at:", win_opts.row, win_opts.col)
+  end
+  
+  debug_print("Creating popup with adaptive positioning")
   
   local popup_win = vim.api.nvim_open_win(buf, false, win_opts)
   vim.api.nvim_win_set_option(popup_win, 'wrap', true)
@@ -80,7 +132,7 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   current_popup.buf = buf
   current_popup.last_item = completion_item
   
-  debug_print("Signature popup created adjacent to completion menu")
+  debug_print("Signature popup created with adaptive positioning")
   
   -- More persistent auto-close behavior - only close on major events
   -- Don't close on CursorMovedI (which fires when navigating completion menu)
