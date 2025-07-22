@@ -128,21 +128,10 @@ local function create_signature_popup(completion_item, main_buf)
     if not result or not result.signatures or #result.signatures == 0 then
       debug_print("No signatures in response")
       
-      -- FALLBACK: Try a simpler approach using the function name directly
-      debug_print("Trying fallback approach with function name lookup...")
+      -- FALLBACK: Create a simple preview popup since signature help failed
+      debug_print("Creating simple preview popup for function:", completion_item.label)
       
-      -- Create a simple signature help request at the function name position
-      local fallback_params = vim.lsp.util.make_position_params(0, otter_nr)
-      fallback_params.context = {
-        triggerKind = 1,
-        isRetrigger = false
-      }
-      
-      -- Try to simulate typing the function name + opening paren
       local function_name = completion_item.label
-      debug_print("Attempting fallback signature request for:", function_name)
-      
-      -- For now, create a simple placeholder popup since signature help failed
       local contents = {
         "**" .. function_name .. "**()",
         "",
