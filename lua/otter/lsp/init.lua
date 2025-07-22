@@ -46,6 +46,7 @@ otterls.start = function(main_nr, completion)
           if method == ms.textDocument_signatureHelp then
             vim.print("=== OTTER-LS REQUEST DEBUG ===")
             vim.print("Method:", method)
+            vim.print("Original params structure:", vim.inspect(params))
             vim.print("Request type: " .. (params.context and params.context.triggerKind and 
                       (params.context.triggerKind == 1 and "INVOKED" or 
                        params.context.triggerKind == 2 and "TRIGGER_CHARACTER" or 

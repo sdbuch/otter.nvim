@@ -261,21 +261,30 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
   -- check that we don't already have otter-ls running
   -- for main buffer
   local clients = vim.lsp.get_clients()
+  vim.print("=== DUPLICATE CHECK DEBUG ===")
+  vim.print("Total clients found:", #clients)
+  
   for _, client in pairs(clients) do
+    vim.print("Checking client:", client.name)
     if client.name == "otter-ls" .. "[" .. main_nr .. "]" then
+      vim.print("Found existing otter-ls for buffer", main_nr)
       if vim.lsp.buf_is_attached(main_nr, client.id) then
         -- already running otter-ls and attached to
         -- this buffer
+        vim.print("Already attached, returning early")
         return
       else
         -- already running otter-ls but detached
         -- just re-attach it
+        vim.print("Detached, re-attaching client", client.id)
         vim.lsp.buf_attach_client(main_nr, client.id)
         keeper.rafts[main_nr].otterls.client_id = client.id
         return
       end
     end
   end
+  
+  vim.print("No existing otter-ls found, starting new one")
 
   -- remove the need to use keybindings for otter ask_ functions
   -- by being our own lsp server-client combo
