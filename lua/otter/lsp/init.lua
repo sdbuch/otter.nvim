@@ -169,6 +169,15 @@ otterls.start = function(main_nr, completion)
           end
           -- take care of potential indents
           keeper.modify_position(params, main_nr, true, true)
+          
+          -- Debug logging for signature help
+          if method == ms.textDocument_signatureHelp then
+            vim.print("otter-ls: processing signatureHelp request")
+            vim.print("position:", params.position)
+            vim.print("language:", lang)
+            vim.print("otter buffer:", otter_nr)
+          end
+          
           -- send the request to the otter buffer
           -- modification of the response is done by our handler
           -- and then passed on to the default handler or user-defined handler
