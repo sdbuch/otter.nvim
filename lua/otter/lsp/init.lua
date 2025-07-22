@@ -193,6 +193,17 @@ otterls.start = function(main_nr, completion)
           -- take care of potential indents
           keeper.modify_position(params, main_nr, true, true)
           
+          -- Add otter context info for proper response handling
+          if method == ms.textDocument_signatureHelp then
+            -- Store original main buffer context so handler can transform response back
+            params.otter = {
+              main_nr = main_nr,
+              main_uri = main_uri,
+              otter_nr = otter_nr,
+              otter_uri = otter_uri
+            }
+          end
+          
           -- Additional debugging for signature help
           if method == ms.textDocument_signatureHelp then
             vim.print("Sending to otter buffer", otter_nr, "language:", lang)

@@ -52,133 +52,33 @@ end
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
 M[ms.textDocument_signatureHelp] = function(err, response, ctx)
+  -- Don't intercept signature help responses - let them use Neovim's default display
+  -- This gives us pyright's native formatting with parameter highlighting
+  
   if err or not response or not response.signatures or #response.signatures == 0 then
-    return
+    return err, response, ctx -- Pass through errors and empty responses
   end
   
-  vim.print("Creating signature popup:", #response.signatures, "signatures")
-  
-  -- TRY DEFAULT HANDLER FIRST (pyright's native formatting with parameter highlighting)
-  -- Create proper context for the default handler
-  local main_buf = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf()
-  
-  -- Find the correct client (should be otter-ls)
-  local otter_clients = vim.lsp.get_clients({ bufnr = main_buf })
-  local client_id = nil
-  for _, client in ipairs(otter_clients) do
-    if client.name:match("otter%-ls") and client.supports_method('textDocument/signatureHelp') then
-      client_id = client.id
-      break
-    end
-  end
-  
-  if client_id then
-    local default_ctx = {
-      method = 'textDocument/signatureHelp',
+  -- Transform context to point to main buffer for proper display
+  if ctx.params and ctx.params.otter then
+    local main_buf = ctx.params.otter.main_nr
+    local transformed_ctx = {
+      method = ctx.method or 'textDocument/signatureHelp',
       bufnr = main_buf,
-      client_id = client_id,
-      params = ctx.params or {}
+      client_id = ctx.client_id,
+      params = {
+        textDocument = { uri = ctx.params.otter.main_uri },
+        position = ctx.params.position,
+        context = ctx.params.context
+      }
     }
     
-    -- Try the default handler first (this gives us parameter highlighting and native pyright formatting)
-    local default_handler = vim.lsp.handlers['textDocument/signatureHelp']
-    if default_handler then
-      vim.print("Trying default handler for dynamic signature help...")
-      local success = pcall(default_handler, err, response, default_ctx)
-      
-      if success then
-        vim.print("Default handler succeeded - using pyright's native formatting")
-        return -- Success! Use pyright's native dynamic signature help
-      else
-        vim.print("Default handler failed, falling back to custom popup")
-      end
-    end
+    -- Return the transformed context so the default handler displays properly
+    return err, response, transformed_ctx
   end
   
-  -- FALLBACK: Custom floating window (static but reliable)
-  vim.print("Using custom popup fallback")
-  
-  local signature = response.signatures[1] -- Use first signature
-  local contents = {}
-  
-  -- Format signature with syntax highlighting
-  table.insert(contents, "**" .. signature.label .. "**")
-  
-  -- Add documentation if available
-  if signature.documentation then
-    table.insert(contents, "")
-    if type(signature.documentation) == "string" then
-      for line in signature.documentation:gmatch("[^\n]+") do
-        table.insert(contents, line)
-      end
-    elseif signature.documentation.value then
-      for line in signature.documentation.value:gmatch("[^\n]+") do
-        table.insert(contents, line)
-      end
-    end
-  end
-  
-  -- Create floating window with proper options
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, contents)
-  
-  -- Set buffer options for markdown
-  vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
-  vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
-  
-  -- Create floating window
-  local win_opts = {
-    relative = 'cursor',
-    width = math.min(80, math.max(20, string.len(signature.label) + 4)),
-    height = #contents,
-    row = 1,
-    col = 0,
-    style = 'minimal',
-    border = 'rounded',
-    title = ' Signature Help ',
-    title_pos = 'center'
-  }
-  
-  local win = vim.api.nvim_open_win(buf, false, win_opts)
-  
-  -- Configure window
-  vim.api.nvim_win_set_option(win, 'wrap', true)
-  vim.api.nvim_win_set_option(win, 'linebreak', true)
-  
-  -- Auto-close on major events only (more persistent like pyright)
-  vim.api.nvim_create_autocmd({'BufLeave', 'InsertLeave'}, {
-    buffer = main_buf,
-    once = true,
-    callback = function()
-      if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_close(win, true)
-      end
-    end
-  })
-  
-  -- Also close when moving to a different line
-  vim.api.nvim_create_autocmd('CursorMoved', {
-    buffer = main_buf,
-    callback = function()
-      local current_pos = vim.api.nvim_win_get_cursor(0)
-      local original_line = ctx.params and ctx.params.position and ctx.params.position.line
-      
-      -- Close if we moved to a different line
-      if original_line and current_pos[1] - 1 ~= original_line then
-        if vim.api.nvim_win_is_valid(win) then
-          vim.api.nvim_win_close(win, true)
-          return true -- Remove this autocmd
-        end
-      end
-    end
-  })
-  
-  -- Shorter timeout (5 seconds)
-  vim.defer_fn(function()
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true) 
-    end
-  end, 5000) -- 5 seconds instead of 10
+  -- If no otter context, pass through unchanged
+  return err, response, ctx
 end
 
 M[ms.textDocument_definition] = function(err, response, ctx)
