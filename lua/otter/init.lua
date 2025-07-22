@@ -312,6 +312,24 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     vim.print("  Supports signature help:", client.supports_method('textDocument/signatureHelp'))
     if client.server_capabilities and client.server_capabilities.signatureHelpProvider then
       vim.print("  Signature help triggers:", vim.inspect(client.server_capabilities.signatureHelpProvider.triggerCharacters))
+      vim.print("  Server capabilities (signatureHelp):", vim.inspect(client.server_capabilities.signatureHelpProvider))
+    end
+    
+    -- Check if client is properly attached
+    local is_attached = vim.lsp.buf_is_attached(main_nr, client.id)
+    vim.print("  Is attached to buffer:", is_attached)
+    
+    -- Check client state
+    vim.print("  Client rpc alive:", client.rpc and client.rpc.is_closing and not client.rpc.is_closing())
+  end
+  
+  -- Additional debug: Check if there are any LSP clients at all that support signature help
+  vim.print("=== ALL SIGNATURE HELP CLIENTS ===")
+  local all_clients = vim.lsp.get_clients()
+  for _, client in ipairs(all_clients) do
+    if client.supports_method('textDocument/signatureHelp') then
+      vim.print("Found signature help client:", client.name, "ID:", client.id)
+      vim.print("  Attached buffers:", vim.tbl_keys(client.attached_buffers or {}))
     end
   end
 
@@ -322,6 +340,21 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       ---@param _ {buf: number, data: {client_id: number, method: string, params: any}}
       callback = function(_) end,
     })
+    
+    -- Add test function for manual signature help debugging
+    vim.api.nvim_create_user_command('OtterTestSigHelp', function()
+      vim.print("=== MANUAL SIGNATURE HELP TEST ===")
+      local buf = vim.api.nvim_get_current_buf()
+      local clients = vim.lsp.get_clients({ bufnr = buf })
+      vim.print("Current buffer:", buf)
+      vim.print("Attached clients:", #clients)
+      for _, client in ipairs(clients) do
+        vim.print("  Client:", client.name, "supports sig help:", client.supports_method('textDocument/signatureHelp'))
+      end
+      
+      -- Try calling signature help
+      vim.lsp.buf.signature_help()
+    end, {})
   end
 end
 

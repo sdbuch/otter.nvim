@@ -47,14 +47,18 @@ otterls.start = function(main_nr, completion)
             vim.print("=== OTTER-LS REQUEST DEBUG ===")
             vim.print("Method:", method)
             vim.print("Original params structure:", vim.inspect(params))
+            vim.print("Has context field:", params.context ~= nil)
+            if params.context then
+              vim.print("Context:", vim.inspect(params.context))
+              vim.print("Trigger kind:", params.context.triggerKind)
+              vim.print("Trigger character:", params.context.triggerCharacter)
+            end
             vim.print("Request type: " .. (params.context and params.context.triggerKind and 
                       (params.context.triggerKind == 1 and "INVOKED" or 
                        params.context.triggerKind == 2 and "TRIGGER_CHARACTER" or 
                        params.context.triggerKind == 3 and "RETRIGGER" or "UNKNOWN") or "NO_CONTEXT"))
-            if params.context and params.context.triggerCharacter then
-              vim.print("Trigger character:", params.context.triggerCharacter)
-            end
             vim.print("Position:", params.position)
+            vim.print("TextDocument URI:", params.textDocument and params.textDocument.uri or "NO_URI")
           end
           
           -- handle initialization first
