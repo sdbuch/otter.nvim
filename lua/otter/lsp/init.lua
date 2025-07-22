@@ -25,9 +25,7 @@ otterls.start = function(main_nr, completion)
   local main_uri = vim.uri_from_bufnr(main_nr)
   
   vim.print("=== STARTING OTTER-LS ===")
-  vim.print("Main buffer:", main_nr)
-  vim.print("Main URI:", main_uri)
-  vim.print("Completion enabled:", completion)
+  vim.print("Buffer:", main_nr, "| Completion:", completion and "ON" or "OFF")
   
   local client_id = vim.lsp.start({
     name = "otter-ls" .. "[" .. main_nr .. "]",
@@ -42,23 +40,25 @@ otterls.start = function(main_nr, completion)
         ---@param handler lsp.Handler function(err, response, ctx) handler is a callback function that should be called with the result depending on the method it is either a user-defined handler (e.g. user's using telescope to list references) or the default vim.lsp.handlers[method] handler
         ---@param _ function notify_reply_callback function. Not currently used
         request = function(method, params, handler, _)
-          -- Debug all signature help requests 
+          -- Debug signature help requests (reduced noise)
           if method == ms.textDocument_signatureHelp then
-            vim.print("=== OTTER-LS REQUEST DEBUG ===")
-            vim.print("Method:", method)
-            vim.print("Original params structure:", vim.inspect(params))
-            vim.print("Has context field:", params.context ~= nil)
-            if params.context then
-              vim.print("Context:", vim.inspect(params.context))
-              vim.print("Trigger kind:", params.context.triggerKind)
-              vim.print("Trigger character:", params.context.triggerCharacter)
+            vim.print("=== OTTER-LS SIGNATURE HELP ===")
+            vim.print("Has context:", params.context ~= nil)
+            
+            -- FIX: Add missing context for signature help requests
+            -- Neovim's LSP client doesn't add context for custom function-based servers
+            if not params.context then
+              vim.print("Adding missing context (manual trigger)")
+              params.context = {
+                triggerKind = 1, -- SignatureHelpTriggerKind.Invoked
+                isRetrigger = false
+              }
+            else
+              local trigger_type = params.context.triggerKind == 1 and "MANUAL" or 
+                                  params.context.triggerKind == 2 and "AUTO(" .. (params.context.triggerCharacter or "?") .. ")" or 
+                                  "OTHER"
+              vim.print("Context present:", trigger_type)
             end
-            vim.print("Request type: " .. (params.context and params.context.triggerKind and 
-                      (params.context.triggerKind == 1 and "INVOKED" or 
-                       params.context.triggerKind == 2 and "TRIGGER_CHARACTER" or 
-                       params.context.triggerKind == 3 and "RETRIGGER" or "UNKNOWN") or "NO_CONTEXT"))
-            vim.print("Position:", params.position)
-            vim.print("TextDocument URI:", params.textDocument and params.textDocument.uri or "NO_URI")
           end
           
           -- handle initialization first
@@ -103,7 +103,7 @@ otterls.start = function(main_nr, completion)
             }
 
             vim.print("=== OTTER-LS INITIALIZE RESULT ===")
-            vim.print("Signature help provider:", vim.inspect(initializeResult.capabilities.signatureHelpProvider))
+            vim.print("Signature help triggers:", vim.inspect(initializeResult.capabilities.signatureHelpProvider.triggerCharacters))
 
             -- default handler for initialize
             handler(nil, initializeResult, params.context)
@@ -249,13 +249,7 @@ otterls.start = function(main_nr, completion)
   vim.print("=== OTTER-LS CLIENT CREATED ===")
   vim.print("Client ID:", client_id)
   if client_id then
-    local client = vim.lsp.get_client_by_id(client_id)
-    if client then
-      vim.print("Client name:", client.name)
-      vim.print("Client supports signature help:", client.supports_method('textDocument/signatureHelp'))
-    else
-      vim.print("ERROR: Client not found!")
-    end
+    vim.print("Signature help ready!")
   else
     vim.print("ERROR: Failed to create client!")
   end

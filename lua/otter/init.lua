@@ -261,22 +261,18 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
   -- check that we don't already have otter-ls running
   -- for main buffer
   local clients = vim.lsp.get_clients()
-  vim.print("=== DUPLICATE CHECK DEBUG ===")
-  vim.print("Total clients found:", #clients)
   
   for _, client in pairs(clients) do
-    vim.print("Checking client:", client.name)
     if client.name == "otter-ls" .. "[" .. main_nr .. "]" then
-      vim.print("Found existing otter-ls for buffer", main_nr)
       if vim.lsp.buf_is_attached(main_nr, client.id) then
         -- already running otter-ls and attached to
         -- this buffer
-        vim.print("Already attached, returning early")
+        vim.print("=== OTTER ALREADY ACTIVE ===")
         return
       else
         -- already running otter-ls but detached
         -- just re-attach it
-        vim.print("Detached, re-attaching client", client.id)
+        vim.print("=== RE-ATTACHING OTTER-LS ===")
         vim.lsp.buf_attach_client(main_nr, client.id)
         keeper.rafts[main_nr].otterls.client_id = client.id
         return
@@ -284,8 +280,6 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     end
   end
   
-  vim.print("No existing otter-ls found, starting new one")
-
   -- remove the need to use keybindings for otter ask_ functions
   -- by being our own lsp server-client combo
   local otterclient_id = otterls.start(main_nr, completion)
@@ -302,59 +296,75 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     })
   end
   
-  -- Debug: Show what clients are attached to the main buffer
-  vim.print("=== MAIN BUFFER CLIENTS DEBUG ===")
-  vim.print("Main buffer number:", main_nr)
+  -- Debug: Show what clients are attached to the main buffer (reduced noise)
+  vim.print("=== OTTER LSP SETUP COMPLETE ===")
+  vim.print("Main buffer:", main_nr, "| otter-ls client:", otterclient_id or "FAILED")
   local main_clients = vim.lsp.get_clients({ bufnr = main_nr })
-  vim.print("Number of clients attached to main buffer:", #main_clients)
   for _, client in ipairs(main_clients) do
-    vim.print("Client:", client.name, "ID:", client.id)
-    vim.print("  Supports signature help:", client.supports_method('textDocument/signatureHelp'))
-    if client.server_capabilities and client.server_capabilities.signatureHelpProvider then
-      vim.print("  Signature help triggers:", vim.inspect(client.server_capabilities.signatureHelpProvider.triggerCharacters))
-      vim.print("  Server capabilities (signatureHelp):", vim.inspect(client.server_capabilities.signatureHelpProvider))
-    end
-    
-    -- Check if client is properly attached
-    local is_attached = vim.lsp.buf_is_attached(main_nr, client.id)
-    vim.print("  Is attached to buffer:", is_attached)
-    
-    -- Check client state
-    vim.print("  Client rpc alive:", client.rpc and client.rpc.is_closing and not client.rpc.is_closing())
-  end
-  
-  -- Additional debug: Check if there are any LSP clients at all that support signature help
-  vim.print("=== ALL SIGNATURE HELP CLIENTS ===")
-  local all_clients = vim.lsp.get_clients()
-  for _, client in ipairs(all_clients) do
     if client.supports_method('textDocument/signatureHelp') then
-      vim.print("Found signature help client:", client.name, "ID:", client.id)
-      vim.print("  Attached buffers:", vim.tbl_keys(client.attached_buffers or {}))
+      vim.print("Signature help enabled:", client.name)
     end
   end
 
-  -- debugging
-  if OtterConfig.debug == true then
-    -- listen to lsp requests and notifications
-    vim.api.nvim_create_autocmd("LspNotify", {
-      ---@param _ {buf: number, data: {client_id: number, method: string, params: any}}
-      callback = function(_) end,
-    })
-    
-    -- Add test function for manual signature help debugging
-    vim.api.nvim_create_user_command('OtterTestSigHelp', function()
-      vim.print("=== MANUAL SIGNATURE HELP TEST ===")
-      local buf = vim.api.nvim_get_current_buf()
-      local clients = vim.lsp.get_clients({ bufnr = buf })
-      vim.print("Current buffer:", buf)
-      vim.print("Attached clients:", #clients)
-      for _, client in ipairs(clients) do
-        vim.print("  Client:", client.name, "supports sig help:", client.supports_method('textDocument/signatureHelp'))
-      end
+  -- SIGNATURE HELP AUTO-TRIGGER SUPPORT
+  -- Custom function-based LSP servers don't get auto-trigger from Neovim's LSP client
+  -- So we need to implement it manually
+  local otter_client_id = keeper.rafts[main_nr].otterls.client_id
+  if otter_client_id then
+    local otter_client = vim.lsp.get_client_by_id(otter_client_id)
+    if otter_client and otter_client.server_capabilities.signatureHelpProvider then
+      local trigger_chars = otter_client.server_capabilities.signatureHelpProvider.triggerCharacters
       
-      -- Try calling signature help
-      vim.lsp.buf.signature_help()
-    end, {})
+      -- Set up auto-trigger for signature help
+      local group = vim.api.nvim_create_augroup("OtterSignatureHelpAutoTrigger" .. main_nr, { clear = true })
+      
+      vim.api.nvim_create_autocmd("InsertCharPre", {
+        buffer = main_nr,
+        group = group,
+        callback = function(args)
+          local char = vim.v.char
+          if vim.tbl_contains(trigger_chars, char) then
+            -- Schedule signature help to run after the character is inserted
+            vim.schedule(function()
+              local current_buf = vim.api.nvim_get_current_buf()
+              if current_buf ~= main_nr then return end
+              
+              -- Check if we're in a code chunk that otter handles
+              local lang = require("otter.keeper").get_current_language_context(main_nr)
+              if not lang then return end
+              
+              vim.print("=== AUTO-TRIGGER SIGNATURE HELP ===")
+              vim.print("Triggered by character:", char)
+              vim.print("Language context:", lang)
+              
+              -- Send signature help request directly to otter-ls with proper context
+              local pos = vim.api.nvim_win_get_cursor(0)
+              local params = {
+                textDocument = { uri = vim.uri_from_bufnr(main_nr) },
+                position = { line = pos[1] - 1, character = pos[2] },
+                context = {
+                  triggerKind = 2, -- SignatureHelpTriggerKind.TriggerCharacter
+                  triggerCharacter = char,
+                  isRetrigger = false
+                }
+              }
+              
+              -- Send request directly to otter-ls
+              otter_client.request('textDocument/signatureHelp', params, function(err, result, ctx)
+                -- Handle the response
+                local handlers = require("otter.lsp.handlers")
+                if handlers['textDocument/signatureHelp'] then
+                  handlers['textDocument/signatureHelp'](err, result, ctx)
+                end
+              end)
+            end)
+          end
+        end
+      })
+      
+      vim.print("=== AUTO-TRIGGER SETUP ===")
+      vim.print("Signature help auto-trigger enabled for chars:", vim.inspect(trigger_chars))
+    end
   end
 end
 
