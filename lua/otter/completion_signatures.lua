@@ -61,27 +61,17 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   if ok then
     local visible_ok, is_visible = pcall(cmp.visible)
     if visible_ok and is_visible then
-    -- Get completion menu info from cmp
-    local complete_state = cmp.get_state()
-    if complete_state and complete_state.get_state then
-      local state = complete_state:get_state()
-      if state and state.completion and state.completion.offset then
-        -- Try to get the position more directly from cmp
-        debug_print("nvim-cmp state found, trying to get position")
+      -- Try to get completion window from cmp's internal view
+      local view_ok, view = pcall(function() return cmp.core.view end)
+      if view_ok and view and view.completion and view.completion.win then
+        local completion_win = view.completion.win.win
+        if completion_win and vim.api.nvim_win_is_valid(completion_win) then
+          local config = vim.api.nvim_win_get_config(completion_win)
+          completion_pos = { config.row or 0, config.col or 0 }
+          completion_width = config.width or 30
+          debug_print("Found cmp completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
+        end
       end
-    end
-    
-    -- Alternative approach: check cmp's internal view
-    local view = cmp.core.view
-    if view and view.completion and view.completion.win then
-      local completion_win = view.completion.win.win
-      if completion_win and vim.api.nvim_win_is_valid(completion_win) then
-        local config = vim.api.nvim_win_get_config(completion_win)
-        completion_pos = { config.row or 0, config.col or 0 }
-        completion_width = config.width or 30
-        debug_print("Found cmp completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
-      end
-    end
     end
   end
   
@@ -323,21 +313,21 @@ local function setup_nvim_cmp(main_buf)
     end
 
     -- Try multiple methods to get the selected entry
-    local entry = cmp.get_selected_entry()
-    if entry then
+    local entry_ok, entry = pcall(cmp.get_selected_entry)
+    if entry_ok and entry then
       debug_print("got selected entry via get_selected_entry")
       return entry.completion_item
     end
 
-    entry = cmp.get_active_entry()
-    if entry then
+    local active_ok, active_entry = pcall(cmp.get_active_entry)
+    if active_ok and active_entry then
       debug_print("got selected entry via get_active_entry")
-      return entry.completion_item
+      return active_entry.completion_item
     end
 
     -- Fallback: get first entry
-    local entries = cmp.get_entries()
-    if entries and #entries > 0 then
+    local entries_ok, entries = pcall(cmp.get_entries)
+    if entries_ok and entries and #entries > 0 then
       debug_print("using first entry as fallback")
       return entries[1].completion_item
     end
@@ -460,16 +450,16 @@ function M.setup(main_buf)
         if visible_ok and is_visible then
         debug_print("CMP menu visible, testing all methods...")
         
-        local entry = cmp.get_selected_entry()
-        local entries = cmp.get_entries()  
-        local active_entry = cmp.get_active_entry()
+        local entry_ok, entry = pcall(cmp.get_selected_entry)
+        local entries_ok, entries = pcall(cmp.get_entries)
+        local active_ok, active_entry = pcall(cmp.get_active_entry)
         
         debug_print("=== DETAILED STATE DUMP ===")
-        debug_print("get_selected_entry():", entry and vim.inspect(entry.completion_item) or "nil")
-        debug_print("get_active_entry():", active_entry and vim.inspect(active_entry.completion_item) or "nil")
-        debug_print("get_entries() count:", entries and #entries or "nil")
+        debug_print("get_selected_entry():", (entry_ok and entry) and vim.inspect(entry.completion_item) or "nil")
+        debug_print("get_active_entry():", (active_ok and active_entry) and vim.inspect(active_entry.completion_item) or "nil")
+        debug_print("get_entries() count:", (entries_ok and entries) and #entries or "nil")
         
-        if entries and #entries > 0 then
+        if entries_ok and entries and #entries > 0 then
           for i, e in ipairs(entries) do
             if i <= 3 then -- Only show first 3 for brevity
               debug_print("Entry", i, ":", e.completion_item and e.completion_item.label or "no item")
@@ -478,7 +468,7 @@ function M.setup(main_buf)
         end
         
         -- Force create popup for testing
-        local target_entry = entry or active_entry or (entries and entries[1])
+        local target_entry = (entry_ok and entry) or (active_ok and active_entry) or (entries_ok and entries and entries[1])
         if target_entry and target_entry.completion_item then
           debug_print("FORCE CREATING POPUP for:", target_entry.completion_item.label)
           create_signature_popup(target_entry.completion_item, main_buf)
@@ -530,9 +520,9 @@ function M.show_signature_for_current_item()
     debug_print("Checking nvim-cmp...")
     local visible_ok, is_visible = pcall(cmp.visible)
     if visible_ok and is_visible then
-      local entry = cmp.get_selected_entry()
-      debug_print("Selected entry:", entry and entry.completion_item and entry.completion_item.label or "none")
-      if entry and entry.completion_item then
+      local entry_ok, entry = pcall(cmp.get_selected_entry)
+      debug_print("Selected entry:", (entry_ok and entry) and entry.completion_item and entry.completion_item.label or "none")
+      if entry_ok and entry and entry.completion_item then
         create_signature_popup(entry.completion_item, main_buf)
         return
       end
