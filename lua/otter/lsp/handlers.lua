@@ -117,15 +117,6 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
     end
   })
   
-  -- Also add escape key to close
-  vim.keymap.set('n', '<Esc>', function()
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
-      return true
-    end
-    return false
-  end, { buffer = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf(), once = true })
-  
   -- Also close after a timeout as backup
   vim.defer_fn(function()
     if vim.api.nvim_win_is_valid(win) then
