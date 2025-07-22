@@ -300,13 +300,8 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         local client_id = args.data and args.data.client_id or "unknown"
         local method = args.data and args.data.method or "unknown"
         local request = args.data and args.data.request or {}
-        
-        -- Only show signature help related messages to reduce noise
-        if method == "textDocument/signatureHelp" then
-          vim.print("=== LSP REQUEST DEBUG ===")
-          vim.print("LSP Request: " .. bufnr .. "[" .. client_id .. "]: " .. method)
-          vim.print("Request params:", vim.inspect(request))
-        end
+        vim.print("LSP Request: " .. bufnr .. "[" .. client_id .. "]: " .. method)
+        vim.print("Request params:", vim.inspect(request))
       end,
     })
   end
