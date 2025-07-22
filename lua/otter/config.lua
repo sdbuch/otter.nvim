@@ -14,6 +14,11 @@ OtterConfig = {
       }) or vim.fn.getcwd(0)
     end,
   },
+  -- completion-related options
+  completion = {
+    -- show signature help popups when hovering over function completion items
+    signature_popups = true,
+  },
   -- options related to the otter buffers
   buffers = {
     -- if set to true, the filetype of the otterbuffers will be set.

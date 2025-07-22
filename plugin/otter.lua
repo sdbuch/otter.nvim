@@ -1,5 +1,12 @@
 vim.api.nvim_create_user_command("OtterActivate", require("otter").activate, {})
 vim.api.nvim_create_user_command("OtterDeactivate", require("otter").deactivate, {})
+
+-- Test completion signature popups
+vim.api.nvim_create_user_command("OtterShowCompletionSignature", function()
+  local completion_signatures = require("otter.completion_signatures")
+  completion_signatures.show_signature_for_current_item()
+end, { desc = "Show signature for current completion item" })
+
 vim.api.nvim_create_user_command("OtterExport", function(opts)
   require("otter").export(opts.bang == true)
 end, { bang = true })

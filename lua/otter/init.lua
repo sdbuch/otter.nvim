@@ -358,6 +358,13 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     end
   end
 
+  -- COMPLETION SIGNATURE POPUPS
+  -- Show signature help when hovering over function completion items
+  if OtterConfig.completion.signature_popups then
+    local completion_signatures = require("otter.completion_signatures")
+    completion_signatures.setup(main_nr)
+  end
+
   -- Add diagnostic command to test pyright directly
   vim.api.nvim_create_user_command('OtterTestPyright', function()
     vim.print("=== PYRIGHT DIAGNOSTIC TEST ===")
