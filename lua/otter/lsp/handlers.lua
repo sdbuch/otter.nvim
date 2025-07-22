@@ -83,16 +83,63 @@ M[ms.textDocument_signatureHelp] = function(err, response, ctx)
   if ctx.params and ctx.params.otter then
     ctx.params.textDocument.uri = ctx.params.otter.main_uri
     ctx.bufnr = ctx.params.otter.main_nr
+    
+    -- Ensure context has all required fields for default handler
+    ctx.method = ctx.method or 'textDocument/signatureHelp'
+    ctx.client_id = ctx.client_id or ctx.params.otter.main_nr -- Use main buffer as fallback
+    
+    vim.print("Handler: context updated - bufnr:", ctx.bufnr, "method:", ctx.method)
   end
+  
+  -- Debug: show full context structure
+  vim.print("Handler: context structure:", vim.inspect({
+    method = ctx.method,
+    bufnr = ctx.bufnr,
+    client_id = ctx.client_id,
+    params_present = ctx.params ~= nil,
+    params_uri = ctx.params and ctx.params.textDocument and ctx.params.textDocument.uri
+  }))
   
   -- Always use the default LSP signature help handler
   local default_handler = vim.lsp.handlers['textDocument/signatureHelp']
   if default_handler then
     vim.print("Handler: calling default LSP handler")
-    default_handler(err, response, ctx)
-    vim.print("Handler: default handler called successfully")
+    
+    -- Try with fresh context construction
+    local fresh_ctx = {
+      method = 'textDocument/signatureHelp',
+      bufnr = ctx.params.otter.main_nr,
+      client_id = ctx.client_id,
+      params = {
+        textDocument = { uri = ctx.params.otter.main_uri },
+        position = ctx.params.position,
+        context = ctx.params.context
+      }
+    }
+    
+    vim.print("Handler: trying with fresh context")
+    local success, result = pcall(default_handler, err, response, fresh_ctx)
+    if success then
+      vim.print("Handler: fresh context - default handler called successfully")
+    else
+      vim.print("Handler: fresh context failed with error:", result)
+      
+      -- Fallback 1: Try calling vim.lsp.buf.signature_help() directly
+      vim.print("Handler: trying fallback - direct signature_help()")
+      vim.schedule(function()
+        vim.lsp.buf.signature_help()
+      end)
+    end
   else
     vim.print("Handler: no default handler available")
+    
+    -- Fallback 2: Create simple notification popup
+    vim.print("Handler: creating simple popup as final fallback")
+    local first_sig = response.signatures[1]
+    vim.notify("Signature Help: " .. first_sig.label, vim.log.levels.INFO, {
+      title = "Python Signature Help",
+      timeout = 5000
+    })
   end
 end
 
