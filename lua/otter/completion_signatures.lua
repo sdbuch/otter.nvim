@@ -78,13 +78,24 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
   -- Fallback: scan for floating windows if cmp method failed
   if not completion_pos then
     debug_print("Scanning for completion windows...")
-    for _, win in ipairs(vim.api.nvim_list_wins()) do
+    debug_print("Total windows:", #vim.api.nvim_list_wins())
+    
+    for i, win in ipairs(vim.api.nvim_list_wins()) do
       if vim.api.nvim_win_is_valid(win) then
         local config = vim.api.nvim_win_get_config(win)
+        debug_print("Window", i, "config:", {
+          relative = config.relative,
+          row = config.row,
+          col = config.col,
+          width = config.width,
+          height = config.height
+        })
+        
         -- Check if this is a floating window positioned relative to cursor
         if config.relative == 'cursor' and config.row ~= nil and config.col ~= nil then
           local win_buf = vim.api.nvim_win_get_buf(win)
           local lines = vim.api.nvim_buf_get_lines(win_buf, 0, 5, false)
+          debug_print("Window", i, "first few lines:", lines)
           
           -- More specific heuristic: check if it contains completion-like content
           local looks_like_completion = false
@@ -93,6 +104,7 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
                         string.match(line, "Class") or string.match(line, "Method") or
                         string.match(line, "print") or string.match(line, "numpy")) then
               looks_like_completion = true
+              debug_print("Found completion pattern in line:", line)
               break
             end
           end
@@ -100,11 +112,17 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
           if looks_like_completion then
             completion_pos = { config.row, config.col }
             completion_width = config.width or 30
-            debug_print("Found completion-like window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
+            debug_print("FOUND completion window at row:", completion_pos[1], "col:", completion_pos[2], "width:", completion_width)
             break
+          else
+            debug_print("Window", i, "doesn't look like completion menu")
           end
         end
       end
+    end
+    
+    if not completion_pos then
+      debug_print("No completion window found in scan")
     end
   end
   
@@ -125,12 +143,13 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
     -- Position to the right of the completion menu
     win_opts.row = completion_pos[1]
     win_opts.col = completion_pos[2] + completion_width + 2 -- Small gap
-    debug_print("Positioning popup at:", win_opts.row, win_opts.col, "relative to completion menu")
+    debug_print("Positioning popup at row:", win_opts.row, "col:", win_opts.col, "relative to completion menu")
   else
-    -- Simple fallback: position to the right of cursor
-    win_opts.row = 0
-    win_opts.col = 1
-    debug_print("Using simple fallback positioning")
+    -- Enhanced fallback: try to position based on typical completion menu size
+    debug_print("Completion menu not detected, using enhanced fallback")
+    win_opts.row = 1  -- Just below cursor line
+    win_opts.col = 35 -- Reasonable guess for completion menu width
+    debug_print("Using enhanced fallback positioning at row:", win_opts.row, "col:", win_opts.col)
   end
   
   debug_print("Creating popup with opts:", vim.inspect(win_opts))
@@ -197,35 +216,25 @@ local function create_signature_popup(completion_item, main_buf)
   end
   last_completion_request_time = current_time
 
-  -- Use completion item position if available, otherwise use cursor position
-  local params
-  if completion_item.data and completion_item.data.position then
-    debug_print("Using completion item position:", vim.inspect(completion_item.data.position))
-    params = {
-      textDocument = { 
-        uri = completion_item.data.uri or completion_item.textDocument.uri 
-      },
-      position = completion_item.data.position
-    }
-  else
-    debug_print("Using cursor position for signature help")
-    params = vim.lsp.util.make_position_params(0)
-    -- Use the otter buffer URI instead of main buffer
-    params.textDocument.uri = keeper.rafts[main_buf].buffers[lang] and 
-                              vim.uri_from_bufnr(keeper.rafts[main_buf].buffers[lang]) or 
-                              params.textDocument.uri
+  -- For completion signatures, we need to simulate what would happen if the user typed the function call
+  -- Get current cursor position and create a synthetic position as if we just typed "function_name("
+  local params = vim.lsp.util.make_position_params(0)
+  
+  -- Use the otter buffer URI 
+  local otter_uri = keeper.rafts[main_buf].buffers[lang] and 
+                    vim.uri_from_bufnr(keeper.rafts[main_buf].buffers[lang])
+  if otter_uri then
+    params.textDocument.uri = otter_uri
   end
   
-  -- Add completion item context
+  debug_print("Using otter buffer URI:", params.textDocument.uri)
+  debug_print("Current position:", vim.inspect(params.position))
+  
+  -- Create context for signature help as if we just opened parentheses
   params.context = {
-    triggerKind = 1, -- Manual/Invoked
-    isRetrigger = false,
-    completionItem = {
-      label = completion_item.label,
-      kind = completion_item.kind,
-      detail = completion_item.detail,
-      data = completion_item.data
-    }
+    triggerKind = 2, -- TriggerCharacter (as if we typed '(')
+    triggerCharacter = "(",
+    isRetrigger = false
   }
 
   debug_print("Making signature help request with params:")
