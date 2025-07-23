@@ -559,42 +559,36 @@ local function setup_nvim_cmp(main_buf)
     end
   end
 
-  -- Use CursorMovedI autocmd instead of global cmp events to avoid command-mode triggers
-  local group = vim.api.nvim_create_augroup("OtterCompletionSignatures" .. main_buf, { clear = true })
-  
+  -- Set up cmp event handlers
+  cmp.event:on('menu_opened', function()
+    debug_print("CMP menu opened")
+    -- Longer delay to let cmp fully populate and user potentially navigate
+    vim.defer_fn(function()
+      debug_print("=== DELAYED CHECK AFTER MENU OPENED ===")
+      handle_item_change()
+    end, 200)
+  end)
+
+  cmp.event:on('menu_closed', function()
+    debug_print("CMP menu closed")
+    close_popup()
+    last_selected_item = nil
+  end)
+
+  cmp.event:on('complete_done', function()
+    debug_print("CMP completion done")
+    close_popup()
+    last_selected_item = nil
+  end)
+
+  -- Handle cursor movement in completion menu
   vim.api.nvim_create_autocmd('CursorMovedI', {
     buffer = main_buf,
-    group = group,
     callback = function()
-      -- Only check if we're in insert mode (this avoids command mode triggers)
-      local mode = vim.api.nvim_get_mode().mode
-      if mode ~= 'i' then
-        return
-      end
-      
       local visible_ok, is_visible = pcall(cmp.visible)
       if visible_ok and is_visible then
-        debug_print("CMP visible in insert mode, checking item")
         handle_item_change()
-      else
-        -- Close popup when completion menu disappears
-        if current_popup.win and vim.api.nvim_win_is_valid(current_popup.win) then
-          debug_print("CMP menu closed, closing popup")
-          close_popup()
-          last_selected_item = nil
-        end
       end
-    end
-  })
-  
-  -- Clean up when leaving insert mode
-  vim.api.nvim_create_autocmd('InsertLeave', {
-    buffer = main_buf,
-    group = group,
-    callback = function()
-      debug_print("Left insert mode, closing popup")
-      close_popup()
-      last_selected_item = nil
     end
   })
 
