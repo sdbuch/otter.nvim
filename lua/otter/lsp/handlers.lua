@@ -266,4 +266,14 @@ M[ms.completionItem_resolve] = function(err, response, ctx)
   return err, response, ctx
 end
 
+M[ms.textDocument_signatureHelp] = function(err, response, ctx)
+  if not response then
+    return err, response, ctx
+  end
+  -- Make the response appear as if it originated from the parent buffer.
+  ctx.params.textDocument.uri = ctx.params.otter.main_uri
+  ctx.bufnr = ctx.params.otter.main_nr
+  return err, response, ctx
+end
+
 return M
