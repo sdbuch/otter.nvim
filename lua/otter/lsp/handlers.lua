@@ -20,22 +20,25 @@ local function filter_one_or_many(response, filter)
   end
 end
 
---- see e.g.
---- vim.lsp.handlers.hover(_, result, ctx)
----@param err lsp.ResponseError?
----@param response lsp.Hover
----@param ctx lsp.HandlerContext
-M[ms.textDocument_hover] = function(err, response, ctx)
+local function pass_on_handler(err, response, ctx)
   if not response then
     return err, response, ctx
   end
 
   -- pretend the response is coming from the main buffer
   ctx.params.textDocument.uri = ctx.params.otter.main_uri
+  ctx.bufnr = ctx.params.otter.main_nr
 
   -- pass modified response on to the default handler
   return err, response, ctx
 end
+
+--- see e.g.
+--- vim.lsp.handlers.hover(_, result, ctx)
+---@param err lsp.ResponseError?
+---@param response lsp.Hover
+---@param ctx lsp.HandlerContext
+M[ms.textDocument_hover] = pass_on_handler
 
 M[ms.textDocument_inlayHint] = function(err, response, ctx)
   if not response then
@@ -51,82 +54,7 @@ end
 ---@param err lsp.ResponseError?
 ---@param response lsp.SignatureHelp
 ---@param ctx lsp.HandlerContext
-M[ms.textDocument_signatureHelp] = function(err, response, ctx)
-  -- Use Neovim's native signature help display (like pyright)
-  
-  if err or not response or not response.signatures or #response.signatures == 0 then
-    return -- Don't display anything for errors or empty responses
-  end
-  
-  vim.print("Displaying signature help:", #response.signatures, "signatures")
-  
-  -- Transform context to point to main buffer for proper display
-  local main_buf = ctx.params and ctx.params.otter and ctx.params.otter.main_nr or vim.api.nvim_get_current_buf()
-  
-  -- Use vim.lsp.util.open_floating_preview to display signature help
-  -- This gives us the same native display as pyright without recursion issues
-  if response.signatures and #response.signatures > 0 then
-    local signature = response.signatures[1]
-    local contents = {}
-    
-    -- Format the signature like pyright does
-    table.insert(contents, signature.label)
-    
-    -- Add parameter documentation if available
-    if signature.documentation then
-      table.insert(contents, "")
-      if type(signature.documentation) == "string" then
-        table.insert(contents, signature.documentation)
-      elseif signature.documentation.value then
-        table.insert(contents, signature.documentation.value)
-      end
-    end
-    
-    -- Add active parameter highlighting if available
-    local active_param = signature.activeParameter or 0
-    if signature.parameters and signature.parameters[active_param + 1] then
-      local param = signature.parameters[active_param + 1]
-      if param.documentation then
-        table.insert(contents, "")
-        
-        -- Handle parameter label (can be string or [start, end] range)
-        local param_label = param.label
-        if type(param_label) == "table" and #param_label == 2 then
-          -- Label is a range [start, end] in the signature
-          local start_pos, end_pos = param_label[1], param_label[2]
-          param_label = string.sub(signature.label, start_pos + 1, end_pos)
-        elseif type(param_label) ~= "string" then
-          param_label = tostring(param_label)
-        end
-        
-        table.insert(contents, "**" .. param_label .. "**")
-        if type(param.documentation) == "string" then
-          table.insert(contents, param.documentation)
-        elseif param.documentation.value then
-          table.insert(contents, param.documentation.value)
-        end
-      end
-    end
-    
-    -- Display using the same method as default signature help
-    local bufnr, winnr = vim.lsp.util.open_floating_preview(contents, "markdown", {
-      border = "rounded",
-      focusable = false,
-      close_events = { "CursorMoved", "BufHidden", "InsertCharPre" },
-    })
-    
-    -- Make sure it appears in the right buffer context
-    if bufnr and main_buf ~= vim.api.nvim_get_current_buf() then
-      -- Switch context briefly to ensure proper positioning
-      local current_win = vim.api.nvim_get_current_win()
-      local main_wins = vim.fn.win_findbuf(main_buf)
-      if #main_wins > 0 then
-        vim.api.nvim_set_current_win(main_wins[1])
-        vim.api.nvim_set_current_win(current_win)
-      end
-    end
-  end
-end
+M[ms.textDocument_signatureHelp] = pass_on_handler
 
 M[ms.textDocument_definition] = function(err, response, ctx)
   if not response then

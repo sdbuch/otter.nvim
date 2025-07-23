@@ -267,12 +267,10 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       if vim.lsp.buf_is_attached(main_nr, client.id) then
         -- already running otter-ls and attached to
         -- this buffer
-        vim.print("=== OTTER ALREADY ACTIVE ===")
         return
       else
         -- already running otter-ls but detached
         -- just re-attach it
-        vim.print("=== RE-ATTACHING OTTER-LS ===")
         vim.lsp.buf_attach_client(main_nr, client.id)
         keeper.rafts[main_nr].otterls.client_id = client.id
         return
@@ -295,10 +293,6 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       border = OtterConfig.lsp.hover.border,
     })
   end
-  
-  -- Debug: Show what clients are attached to the main buffer (reduced noise)
-  vim.print("=== OTTER LSP SETUP COMPLETE ===")
-  vim.print("Main buffer:", main_nr, "| otter-ls client:", otterclient_id or "FAILED")
   
   -- SIGNATURE HELP AUTO-TRIGGER SUPPORT
   -- Custom function-based LSP servers don't get auto-trigger from Neovim's LSP client
@@ -353,8 +347,6 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
           end
         end
       })
-      
-      vim.print("Signature help auto-trigger enabled")
     end
   end
 
@@ -367,16 +359,12 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
 
   -- Add diagnostic command to test pyright directly
   vim.api.nvim_create_user_command('OtterTestPyright', function()
-    vim.print("=== PYRIGHT DIAGNOSTIC TEST ===")
     -- Find a Python otter buffer
     for lang, buf_nr in pairs(keeper.rafts[main_nr].buffers) do
       if lang == "python" then
-        vim.print("Testing pyright on otter buffer:", buf_nr)
         local clients = vim.lsp.get_clients({ bufnr = buf_nr })
         for _, client in ipairs(clients) do
-          vim.print("Client on otter buffer:", client.name)
           if client.name == "pyright" or client.name:match("pyright") then
-            vim.print("Found pyright! Testing signature help...")
             -- Switch to otter buffer temporarily and test
             local current_buf = vim.api.nvim_get_current_buf()
             vim.api.nvim_set_current_buf(buf_nr)
@@ -385,7 +373,6 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
             return
           end
         end
-        vim.print("No pyright client found on otter buffer")
         break
       end
     end
