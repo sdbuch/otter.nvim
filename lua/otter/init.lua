@@ -217,6 +217,21 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       desc = "[otter] auto signatureHelp for embedded language chunks",
     })
 
+    -- trigger when completion selection changes (cmp or native)
+    vim.api.nvim_create_autocmd("CompleteChanged", {
+      group = sig_grp,
+      buffer = main_nr,
+      callback = function()
+        -- schedule to avoid firing while pumvisible busy
+        vim.defer_fn(function()
+          if vim.api.nvim_get_current_buf() == main_nr and vim.fn.pumvisible() == 1 then
+            pcall(vim.lsp.buf.signature_help)
+          end
+        end, 40)
+      end,
+      desc = "[otter] refresh signatureHelp on completion item change",
+    })
+
     keeper.rafts[main_nr].signature_group = sig_grp
   end
 
