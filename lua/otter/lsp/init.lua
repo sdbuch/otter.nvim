@@ -160,7 +160,11 @@ otterls.start = function(main_nr, completion)
 
           -- special modifications to params
           -- for some methods
-          if method == ms.textDocument_documentSymbol then
+          if method == ms.completionItem_resolve then
+            if params.data ~= nil then
+              params.data.uri = otter_uri
+            end
+          elseif method == ms.textDocument_documentSymbol then
             params.uri = otter_uri
           elseif method == ms.textDocument_references then
             params.context = {
