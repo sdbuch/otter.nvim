@@ -393,6 +393,13 @@ local function setup_nvim_cmp(main_buf)
 
   -- Handle completion item changes
   local function handle_item_change()
+    -- First check: are we even in insert mode?
+    local mode = vim.api.nvim_get_mode().mode
+    if mode ~= 'i' then
+      debug_print("Not in insert mode (mode:", mode, "), ignoring")
+      return
+    end
+    
     local visible_ok, is_visible = pcall(cmp.visible)
     if not visible_ok or not is_visible then
       debug_print("CMP menu not visible, closing popup")
@@ -407,11 +414,33 @@ local function setup_nvim_cmp(main_buf)
     debug_print("Current buffer:", current_buf)
     debug_print("Main buffer:", main_buf)
     debug_print("Is main buffer:", current_buf == main_buf)
+    debug_print("Current mode:", mode)
     
     -- Only proceed if we're in the main buffer (where Python blocks are)
     if current_buf ~= main_buf then
       debug_print("Not in main buffer, ignoring completion")
       return
+    end
+    
+    -- Early check: if we only have cmdline/non-LSP sources, don't proceed
+    local entries_ok, entries = pcall(cmp.get_entries)
+    if entries_ok and entries and #entries > 0 then
+      local has_lsp = false
+      for _, e in ipairs(entries) do
+        if e.source then
+          local source_name = e.source.name or "unknown"
+          if source_name == "nvim_lsp" or source_name == "otter" or string.find(source_name, "lsp") then
+            has_lsp = true
+            break
+          end
+        end
+      end
+      
+      if not has_lsp then
+        debug_print("No LSP completions available, ignoring (sources:", 
+                   entries[1] and entries[1].source and entries[1].source.name or "unknown", ")")
+        return
+      end
     end
     
     -- Check if we're in a Python context using otter
@@ -457,6 +486,28 @@ local function setup_nvim_cmp(main_buf)
     debug_print("Line:", cursor_line)
     debug_print("Before cursor:", before_cursor)
     debug_print("Cursor position:", cursor_col)
+    
+    -- Additional sanity check: if we're typing something that looks like Python
+    if before_cursor and string.len(before_cursor) > 0 then
+      -- Check if it looks like Python code (not command line or other contexts)
+      local looks_like_python = string.match(before_cursor, "%w+") -- contains word characters
+      local looks_like_command = string.match(before_cursor, "^%s*:") -- starts with :
+      local looks_like_search = string.match(before_cursor, "^%s*/") -- starts with /
+      
+      debug_print("Looks like Python:", looks_like_python ~= nil)
+      debug_print("Looks like command:", looks_like_command ~= nil)
+      debug_print("Looks like search:", looks_like_search ~= nil)
+      
+      if looks_like_command or looks_like_search then
+        debug_print("Detected command/search context, ignoring")
+        return
+      end
+      
+      if not looks_like_python then
+        debug_print("Doesn't look like Python code, ignoring")
+        return
+      end
+    end
 
     local current_item = get_current_item()
     if not current_item then
@@ -464,19 +515,43 @@ local function setup_nvim_cmp(main_buf)
       return
     end
 
-    -- Check if the item actually changed
-    if last_selected_item and 
-       last_selected_item.label == current_item.label and
-       last_selected_item.kind == current_item.kind then
+    -- Check if the item actually changed (but be more lenient for responsiveness)
+    local item_key = current_item.label .. ":" .. (current_item.kind or "nil")
+    local last_key = last_selected_item and (last_selected_item.label .. ":" .. (last_selected_item.kind or "nil")) or "none"
+    
+    if item_key == last_key then
       debug_print("Same item still selected, no change needed")
       return
     end
 
-    debug_print("Item changed from", last_selected_item and last_selected_item.label or "none", "to", current_item.label)
+    debug_print("Item changed from", last_key, "to", item_key)
     last_selected_item = current_item
+
+    -- Verify this item came from an LSP source before proceeding
+    local entries_ok, entries = pcall(cmp.get_entries)
+    local current_item_is_lsp = false
+    if entries_ok and entries then
+      for _, e in ipairs(entries) do
+        if e.completion_item and e.completion_item.label == current_item.label then
+          local source_name = e.source and e.source.name or "unknown"
+          if source_name == "nvim_lsp" or source_name == "otter" or string.find(source_name, "lsp") then
+            current_item_is_lsp = true
+            debug_print("Current item confirmed as LSP source:", source_name)
+            break
+          end
+        end
+      end
+    end
+    
+    if not current_item_is_lsp then
+      debug_print("Current item is not from LSP source, ignoring")
+      close_popup()
+      return
+    end
 
     -- Only show popup for function-like items
     if is_function_like(current_item) then
+      debug_print("Creating signature popup for LSP function:", current_item.label)
       create_signature_popup(current_item, main_buf)
     else
       debug_print("Item is not function-like, closing popup")

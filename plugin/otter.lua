@@ -34,6 +34,7 @@ vim.api.nvim_create_user_command("OtterCompletionSignatures", function(opts)
   local enable = opts.args == "on" or opts.args == "true" or opts.args == "1"
   local disable = opts.args == "off" or opts.args == "false" or opts.args == "0"
   local reload = opts.args == "reload"
+  local status = opts.args == "status"
   
   if enable then
     completion_signatures.set_enabled(true)
@@ -44,12 +45,38 @@ vim.api.nvim_create_user_command("OtterCompletionSignatures", function(opts)
   elseif reload then
     completion_signatures.reload()
     vim.notify("Completion signatures: RELOADED", vim.log.levels.INFO)
+  elseif status then
+    local ok, cmp = pcall(require, 'cmp')
+    if ok then
+      print("=== COMPLETION DEBUG STATUS ===")
+      print("CMP visible:", cmp.visible())
+      print("Current buffer:", vim.api.nvim_get_current_buf())
+      print("Current mode:", vim.api.nvim_get_mode().mode)
+      print("Current line:", vim.api.nvim_get_current_line())
+      
+      if cmp.visible() then
+        local entries = cmp.get_entries()
+        print("Total entries:", #entries)
+        for i, e in ipairs(entries) do
+          if i <= 5 then -- Show first 5
+            local source = e.source and e.source.name or "unknown"
+            local label = e.completion_item and e.completion_item.label or "no label"
+            local kind = e.completion_item and e.completion_item.kind or "no kind"
+            print(string.format("  %d: %s (kind:%s, source:%s)", i, label, kind, source))
+          end
+        end
+      else
+        print("No completion menu visible")
+      end
+    else
+      print("nvim-cmp not available")
+    end
   else
-    vim.notify("Usage: :OtterCompletionSignatures [on|off|reload]", vim.log.levels.WARN)
+    vim.notify("Usage: :OtterCompletionSignatures [on|off|reload|status]", vim.log.levels.WARN)
   end
 end, { 
   nargs = "?", 
-  complete = function() return {"on", "off", "reload"} end,
+  complete = function() return {"on", "off", "reload", "status"} end,
   desc = "Control completion signatures feature" 
 })
 
