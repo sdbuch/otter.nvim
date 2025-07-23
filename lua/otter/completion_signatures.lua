@@ -6,7 +6,7 @@ local M = {}
 local keeper = require("otter.keeper")
 
 -- TEMPORARY: Disable to stop errors while debugging
-local FEATURE_ENABLED = true
+local FEATURE_ENABLED = false
 
 -- Track current signature popup
 local current_popup = {

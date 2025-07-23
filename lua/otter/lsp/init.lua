@@ -24,6 +24,9 @@ local otterls = {}
 otterls.start = function(main_nr, completion)
   local main_uri = vim.uri_from_bufnr(main_nr)
   
+  vim.print("=== STARTING OTTER-LS ===")
+  vim.print("Buffer:", main_nr, "| Completion:", completion and "ON" or "OFF")
+  
   local client_id = vim.lsp.start({
     name = "otter-ls" .. "[" .. main_nr .. "]",
     capabilities = capabilities,
@@ -39,6 +42,10 @@ otterls.start = function(main_nr, completion)
         request = function(method, params, handler, _)
           -- Debug signature help requests (reduced noise)
           if method == ms.textDocument_signatureHelp then
+            vim.print("=== SIGNATURE HELP REQUEST ===")
+            local trigger_type = params.context and params.context.triggerKind == 2 and "AUTO" or "MANUAL"
+            vim.print("Type:", trigger_type, "| Position:", params.position.line .. ":" .. params.position.character)
+            
             -- FIX: Add missing context for signature help requests
             -- Neovim's LSP client doesn't add context for custom function-based servers
             if not params.context then
@@ -89,6 +96,9 @@ otterls.start = function(main_nr, completion)
                 version = "2.0.0",
               },
             }
+
+            vim.print("=== OTTER-LS INITIALIZE RESULT ===")
+            vim.print("Signature help triggers:", vim.inspect(initializeResult.capabilities.signatureHelpProvider.triggerCharacters))
 
             -- default handler for initialize
             handler(nil, initializeResult, params.context)
@@ -182,11 +192,33 @@ otterls.start = function(main_nr, completion)
           end
           -- take care of potential indents
           keeper.modify_position(params, main_nr, true, true)
-
+          
+          -- Add otter context info for proper response handling
+          if method == ms.textDocument_signatureHelp then
+            -- Store original main buffer context so handler can transform response back
+            params.otter = {
+              main_nr = main_nr,
+              main_uri = main_uri,
+              otter_nr = otter_nr,
+              otter_uri = otter_uri
+            }
+          end
+          
+          -- Additional debugging for signature help
+          if method == ms.textDocument_signatureHelp then
+            vim.print("Sending to otter buffer", otter_nr, "language:", lang)
+          end
+          
           -- t stisend the request to the otter buffer
           -- modification of the response is done by our handler
-          -- and then passed on to the a user-defined handler
+          -- and then passed on to the default handler or user-defined handler
           vim.lsp.buf_request(otter_nr, method, params, function(err, result, ctx)
+            -- Debug signature help responses
+            if method == ms.textDocument_signatureHelp then
+              local status = err and "ERROR" or (result and result.signatures and #result.signatures .. " sigs" or "none")
+              vim.print("Response:", status)
+            end
+            
             if handlers[method] ~= nil then
               err, result, ctx = handlers[method](err, result, ctx)
             end
@@ -230,6 +262,16 @@ otterls.start = function(main_nr, completion)
       -- nothing to be done
     end,
   })
+
+  vim.print("=== OTTER-LS CLIENT CREATED ===")
+  vim.print("Client ID:", client_id)
+  if client_id then
+    vim.print("Signature help ready!")
+  else
+    vim.print("ERROR: Failed to create client!")
+  end
+
+  return client_id
 end
 
 --- for reference
