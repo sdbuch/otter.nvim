@@ -362,10 +362,13 @@ local function setup_nvim_cmp(main_buf)
     local entries_ok, entries = pcall(cmp.get_entries)
     debug_print("get_entries result:", entries_ok, entries and #entries or "nil")
     if entries_ok and entries and #entries > 0 then
+      debug_print("=== ALL AVAILABLE ENTRIES ===")
+      for i, e in ipairs(entries) do
+        if e.completion_item then
+          debug_print(string.format("  %d: %s (kind: %s)", i, e.completion_item.label or "no label", e.completion_item.kind or "no kind"))
+        end
+      end
       debug_print("using first entry as fallback:", entries[1].completion_item and entries[1].completion_item.label or "no label")
-      debug_print("first 3 entries:", entries[1] and entries[1].completion_item and entries[1].completion_item.label or "nil",
-                                     entries[2] and entries[2].completion_item and entries[2].completion_item.label or "nil", 
-                                     entries[3] and entries[3].completion_item and entries[3].completion_item.label or "nil")
       return entries[1].completion_item
     end
 
@@ -381,6 +384,15 @@ local function setup_nvim_cmp(main_buf)
       last_selected_item = nil
       return
     end
+
+    -- Add context about what's being typed
+    local cursor_line = vim.api.nvim_get_current_line()
+    local cursor_col = vim.api.nvim_win_get_cursor(0)[2]
+    local before_cursor = string.sub(cursor_line, 1, cursor_col)
+    debug_print("=== COMPLETION CONTEXT ===")
+    debug_print("Line:", cursor_line)
+    debug_print("Before cursor:", before_cursor)
+    debug_print("Cursor position:", cursor_col)
 
     local current_item = get_current_item()
     if not current_item then
@@ -411,8 +423,11 @@ local function setup_nvim_cmp(main_buf)
   -- Set up cmp event handlers
   cmp.event:on('menu_opened', function()
     debug_print("CMP menu opened")
-    -- Small delay to let cmp settle
-    vim.defer_fn(handle_item_change, 50)
+    -- Longer delay to let cmp fully populate and user potentially navigate
+    vim.defer_fn(function()
+      debug_print("=== DELAYED CHECK AFTER MENU OPENED ===")
+      handle_item_change()
+    end, 200)
   end)
 
   cmp.event:on('menu_closed', function()
@@ -477,41 +492,49 @@ function M.setup(main_buf)
   if cmp_setup then
     vim.print("Completion signatures: nvim-cmp integration enabled")
     
-    -- Add insert mode key mapping for testing (Ctrl+K)
+        -- Add insert mode key mapping for testing (Ctrl+K)
     vim.keymap.set('i', '<C-k>', function()
-      debug_print("=== INSERT MODE TEST TRIGGERED ===")
+      debug_print("=== MANUAL TRIGGER WHEN HOVERING OVER COMPLETION ITEM ===")
+      
+      -- Add context about current typing
+      local cursor_line = vim.api.nvim_get_current_line()
+      local cursor_col = vim.api.nvim_win_get_cursor(0)[2]
+      local before_cursor = string.sub(cursor_line, 1, cursor_col)
+      debug_print("Line:", cursor_line)
+      debug_print("Before cursor:", before_cursor)
       
       local ok, cmp = pcall(require, 'cmp')
       if ok then
         local visible_ok, is_visible = pcall(cmp.visible)
         if visible_ok and is_visible then
-        debug_print("CMP menu visible, testing all methods...")
-        
-        local entry_ok, entry = pcall(cmp.get_selected_entry)
-        local entries_ok, entries = pcall(cmp.get_entries)
-        local active_ok, active_entry = pcall(cmp.get_active_entry)
-        
-        debug_print("=== DETAILED STATE DUMP ===")
-        debug_print("get_selected_entry():", (entry_ok and entry) and vim.inspect(entry.completion_item) or "nil")
-        debug_print("get_active_entry():", (active_ok and active_entry) and vim.inspect(active_entry.completion_item) or "nil")
-        debug_print("get_entries() count:", (entries_ok and entries) and #entries or "nil")
-        
-        if entries_ok and entries and #entries > 0 then
-          for i, e in ipairs(entries) do
-            if i <= 3 then -- Only show first 3 for brevity
-              debug_print("Entry", i, ":", e.completion_item and e.completion_item.label or "no item")
+          debug_print("CMP menu visible, testing all methods...")
+          
+          local entry_ok, entry = pcall(cmp.get_selected_entry)
+          local entries_ok, entries = pcall(cmp.get_entries)
+          local active_ok, active_entry = pcall(cmp.get_active_entry)
+          
+          debug_print("=== DETAILED STATE DUMP ===")
+          debug_print("get_selected_entry():", (entry_ok and entry) and vim.inspect(entry.completion_item) or "nil")
+          debug_print("get_active_entry():", (active_ok and active_entry) and vim.inspect(active_entry.completion_item) or "nil")
+          debug_print("get_entries() count:", (entries_ok and entries) and #entries or "nil")
+          
+          if entries_ok and entries and #entries > 0 then
+            debug_print("=== ALL COMPLETION ENTRIES ===")
+            for i, e in ipairs(entries) do
+              if e.completion_item then
+                debug_print(string.format("Entry %d: %s (kind: %s)", i, e.completion_item.label or "no label", e.completion_item.kind or "no kind"))
+              end
             end
           end
-        end
-        
-        -- Force create popup for testing
-        local target_entry = (entry_ok and entry) or (active_ok and active_entry) or (entries_ok and entries and entries[1])
-        if target_entry and target_entry.completion_item then
-          debug_print("FORCE CREATING POPUP for:", target_entry.completion_item.label)
-          create_signature_popup(target_entry.completion_item, main_buf)
-        else
-          debug_print("NO SUITABLE ENTRY FOUND")
-        end
+          
+          -- Force create popup for testing
+          local target_entry = (entry_ok and entry) or (active_ok and active_entry) or (entries_ok and entries and entries[1])
+          if target_entry and target_entry.completion_item then
+            debug_print("FORCE CREATING POPUP for:", target_entry.completion_item.label)
+            create_signature_popup(target_entry.completion_item, main_buf)
+          else
+            debug_print("NO SUITABLE ENTRY FOUND")
+          end
         else
           debug_print("CMP menu not visible")
         end
@@ -523,7 +546,7 @@ function M.setup(main_buf)
     end, { 
       buffer = main_buf,
       expr = true, -- Important: makes it an expression mapping
-      desc = "Test completion signature popup (Ctrl+K in insert mode)" 
+      desc = "Manual trigger: Test completion signature popup (Ctrl+K in insert mode)" 
     })
     
     vim.print("Completion signatures: Press Ctrl+K in insert mode to test while menu is open")
