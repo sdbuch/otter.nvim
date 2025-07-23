@@ -89,6 +89,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     },
     diagnostics_namespaces = {},
     diagnostics_group = nil,
+    signature_group = nil,
   }
 
   local code_chunks = keeper.extract_code_chunks(main_nr)
@@ -190,6 +191,34 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       end
     end
     ::continue::
+  end
+
+  -- ---------------------------------------------------------------------------
+  -- Signature-help autopopup for embedded chunks
+  -- ---------------------------------------------------------------------------
+  do
+    -- one augroup per main buffer so we can clear it on deactivate
+    local sig_grp = vim.api.nvim_create_augroup("OtterSignature" .. main_nr, { clear = true })
+    vim.api.nvim_create_autocmd("InsertCharPre", {
+      group = sig_grp,
+      buffer = main_nr,
+      callback = function(ev)
+        -- character about to be inserted
+        local ch = (ev and ev.char) or vim.v.char or ""
+        if ch == "(" or ch == "," then
+          -- trigger after the character has been inserted so positions match
+          vim.schedule(function()
+            -- ensure still in the same buffer
+            if vim.api.nvim_get_current_buf() == main_nr then
+              pcall(vim.lsp.buf.signature_help)
+            end
+          end)
+        end
+      end,
+      desc = "[otter] auto signatureHelp for embedded language chunks",
+    })
+
+    keeper.rafts[main_nr].signature_group = sig_grp
   end
 
   -- this has to happen again after the
@@ -344,6 +373,12 @@ M.deactivate = function(completion, diagnostics)
     vim.lsp.buf_detach_client(main_nr, id)
 
     keeper.rafts[main_nr].otterls.client_id = nil
+  end
+
+  -- remove signature help autocommands
+  local id = keeper.rafts[main_nr].signature_group
+  if id ~= nil then
+    vim.api.nvim_del_augroup_by_id(id)
   end
 
   for _, otter_bufnr in pairs(keeper.rafts[main_nr].buffers) do
