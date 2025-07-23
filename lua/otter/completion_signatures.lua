@@ -62,14 +62,26 @@ local function create_positioned_popup(contents, title, main_buf, completion_ite
     local visible_ok, is_visible = pcall(cmp.visible)
     if visible_ok and is_visible then
       -- Try to get completion window from cmp's internal view
+      debug_print("Trying to get cmp.core.view...")
       local view_ok, view = pcall(function() return cmp.core.view end)
-      if view_ok and view and view.completion and view.completion.win then
-        local completion_win = view.completion.win.win
-        if completion_win and vim.api.nvim_win_is_valid(completion_win) then
-          local config = vim.api.nvim_win_get_config(completion_win)
-          completion_pos = { config.row or 0, config.col or 0 }
-          completion_width = config.width or 30
-          debug_print("Found cmp completion window at:", completion_pos[1], completion_pos[2], "width:", completion_width)
+      debug_print("view_ok:", view_ok, "view exists:", view ~= nil)
+      
+      if view_ok and view then
+        debug_print("view.completion exists:", view.completion ~= nil)
+        if view.completion then
+          debug_print("view.completion.win exists:", view.completion.win ~= nil)
+          if view.completion.win then
+            debug_print("view.completion.win.win exists:", view.completion.win.win ~= nil)
+            local completion_win = view.completion.win.win
+            if completion_win and vim.api.nvim_win_is_valid(completion_win) then
+              local config = vim.api.nvim_win_get_config(completion_win)
+              completion_pos = { config.row or 0, config.col or 0 }
+              completion_width = config.width or 30
+              debug_print("SUCCESS: Found cmp completion window at row:", completion_pos[1], "col:", completion_pos[2], "width:", completion_width)
+            else
+              debug_print("Completion window invalid or doesn't exist")
+            end
+          end
         end
       end
     end
@@ -296,9 +308,19 @@ end
 
 -- Helper to check if a completion item is function-like
 local function is_function_like(item)
-  return item.kind == vim.lsp.protocol.CompletionItemKind.Function or 
-         item.kind == vim.lsp.protocol.CompletionItemKind.Method or
-         item.kind == vim.lsp.protocol.CompletionItemKind.Constructor
+  debug_print("=== FUNCTION CHECK ===")
+  debug_print("Item label:", item.label)
+  debug_print("Item kind:", item.kind)
+  debug_print("Function kind:", vim.lsp.protocol.CompletionItemKind.Function)
+  debug_print("Method kind:", vim.lsp.protocol.CompletionItemKind.Method)
+  debug_print("Constructor kind:", vim.lsp.protocol.CompletionItemKind.Constructor)
+  
+  local is_func = item.kind == vim.lsp.protocol.CompletionItemKind.Function or 
+                  item.kind == vim.lsp.protocol.CompletionItemKind.Method or
+                  item.kind == vim.lsp.protocol.CompletionItemKind.Constructor
+  
+  debug_print("Is function-like:", is_func)
+  return is_func
 end
 
 -- Setup nvim-cmp integration
@@ -323,12 +345,14 @@ local function setup_nvim_cmp(main_buf)
 
     -- Try multiple methods to get the selected entry
     local entry_ok, entry = pcall(cmp.get_selected_entry)
+    debug_print("get_selected_entry result:", entry_ok, entry and entry.completion_item and entry.completion_item.label or "nil")
     if entry_ok and entry then
       debug_print("got selected entry via get_selected_entry")
       return entry.completion_item
     end
 
     local active_ok, active_entry = pcall(cmp.get_active_entry)
+    debug_print("get_active_entry result:", active_ok, active_entry and active_entry.completion_item and active_entry.completion_item.label or "nil")
     if active_ok and active_entry then
       debug_print("got selected entry via get_active_entry")
       return active_entry.completion_item
@@ -336,8 +360,12 @@ local function setup_nvim_cmp(main_buf)
 
     -- Fallback: get first entry
     local entries_ok, entries = pcall(cmp.get_entries)
+    debug_print("get_entries result:", entries_ok, entries and #entries or "nil")
     if entries_ok and entries and #entries > 0 then
-      debug_print("using first entry as fallback")
+      debug_print("using first entry as fallback:", entries[1].completion_item and entries[1].completion_item.label or "no label")
+      debug_print("first 3 entries:", entries[1] and entries[1].completion_item and entries[1].completion_item.label or "nil",
+                                     entries[2] and entries[2].completion_item and entries[2].completion_item.label or "nil", 
+                                     entries[3] and entries[3].completion_item and entries[3].completion_item.label or "nil")
       return entries[1].completion_item
     end
 
