@@ -207,12 +207,11 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         local ch = (ev and ev.char) or vim.v.char or ""
         if ch == "(" or ch == "," then
           -- trigger after the character has been inserted so positions match
-          vim.schedule(function()
-            -- ensure still in the same buffer
+          vim.defer_fn(function()
             if vim.api.nvim_get_current_buf() == main_nr then
               pcall(vim.lsp.buf.signature_help)
             end
-          end)
+          end, 40)
         end
       end,
       desc = "[otter] auto signatureHelp for embedded language chunks",
