@@ -358,18 +358,34 @@ local function setup_nvim_cmp(main_buf)
       return active_entry.completion_item
     end
 
-    -- Fallback: get first entry
+    -- Fallback: get first entry, but filter for LSP entries only
     local entries_ok, entries = pcall(cmp.get_entries)
     debug_print("get_entries result:", entries_ok, entries and #entries or "nil")
     if entries_ok and entries and #entries > 0 then
       debug_print("=== ALL AVAILABLE ENTRIES ===")
+      local lsp_entries = {}
       for i, e in ipairs(entries) do
         if e.completion_item then
-          debug_print(string.format("  %d: %s (kind: %s)", i, e.completion_item.label or "no label", e.completion_item.kind or "no kind"))
+          local source_name = e.source and e.source.name or "unknown"
+          debug_print(string.format("  %d: %s (kind: %s, source: %s)", i, e.completion_item.label or "no label", e.completion_item.kind or "no kind", source_name))
+          
+          -- Only keep LSP entries (from otter-ls or other LSP sources)
+          if source_name == "nvim_lsp" or source_name == "otter" or string.find(source_name, "lsp") then
+            table.insert(lsp_entries, e)
+            debug_print("    -> KEPT (LSP source)")
+          else
+            debug_print("    -> FILTERED OUT (non-LSP source)")
+          end
         end
       end
-      debug_print("using first entry as fallback:", entries[1].completion_item and entries[1].completion_item.label or "no label")
-      return entries[1].completion_item
+      
+      if #lsp_entries > 0 then
+        debug_print("Using first LSP entry:", lsp_entries[1].completion_item.label)
+        return lsp_entries[1].completion_item
+      else
+        debug_print("No LSP entries found, falling back to first entry")
+        return entries[1].completion_item
+      end
     end
 
     return nil
@@ -382,6 +398,54 @@ local function setup_nvim_cmp(main_buf)
       debug_print("CMP menu not visible, closing popup")
       close_popup()
       last_selected_item = nil
+      return
+    end
+
+    -- Check if we're in a Python code block
+    local current_buf = vim.api.nvim_get_current_buf()
+    debug_print("=== BUFFER CONTEXT ===")
+    debug_print("Current buffer:", current_buf)
+    debug_print("Main buffer:", main_buf)
+    debug_print("Is main buffer:", current_buf == main_buf)
+    
+    -- Only proceed if we're in the main buffer (where Python blocks are)
+    if current_buf ~= main_buf then
+      debug_print("Not in main buffer, ignoring completion")
+      return
+    end
+    
+    -- Check if we're in a Python context using otter
+    local ok, otter_keeper = pcall(require, 'otter.keeper')
+    local lang_context = nil
+    if ok and otter_keeper and otter_keeper.rafts and otter_keeper.rafts[main_buf] then
+      local raft = otter_keeper.rafts[main_buf]
+      debug_print("Otter raft languages:", raft.languages and vim.inspect(raft.languages) or "none")
+      if raft.languages then
+        for _, lang in ipairs(raft.languages) do
+          if lang == "python" then
+            lang_context = "python"
+            break
+          end
+        end
+      end
+    end
+    
+    -- Alternative: check if we're in a code block using treesitter or context
+    if not lang_context then
+      -- Look for Python code block markers
+      local lines_above = vim.api.nvim_buf_get_lines(main_buf, math.max(0, vim.api.nvim_win_get_cursor(0)[1] - 10), vim.api.nvim_win_get_cursor(0)[1], false)
+      for _, line in ipairs(lines_above) do
+        if string.match(line, "```python") or string.match(line, "```{python}") then
+          lang_context = "python"
+          debug_print("Found Python code block marker")
+          break
+        end
+      end
+    end
+    
+    debug_print("Final language context:", lang_context)
+    if lang_context ~= "python" then
+      debug_print("Not in Python context, ignoring completion")
       return
     end
 
@@ -520,11 +584,18 @@ function M.setup(main_buf)
           
           if entries_ok and entries and #entries > 0 then
             debug_print("=== ALL COMPLETION ENTRIES ===")
+            local lsp_count = 0
             for i, e in ipairs(entries) do
               if e.completion_item then
-                debug_print(string.format("Entry %d: %s (kind: %s)", i, e.completion_item.label or "no label", e.completion_item.kind or "no kind"))
+                local source_name = e.source and e.source.name or "unknown"
+                debug_print(string.format("Entry %d: %s (kind: %s, source: %s)", i, e.completion_item.label or "no label", e.completion_item.kind or "no kind", source_name))
+                if source_name == "nvim_lsp" or source_name == "otter" or string.find(source_name, "lsp") then
+                  lsp_count = lsp_count + 1
+                  debug_print("    -> LSP ENTRY")
+                end
               end
             end
+            debug_print("Total LSP entries:", lsp_count, "out of", #entries)
           end
           
           -- Force create popup for testing
