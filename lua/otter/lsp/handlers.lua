@@ -8,6 +8,36 @@ local fn = require("otter.tools.functions")
 local ms = vim.lsp.protocol.Methods
 local modify_position = require("otter.keeper").modify_position
 
+-- Add a pretty UI for signature help globally (border + non-focusing + compact title)
+-- Wrap whatever handler is currently installed so we don't fight user configs
+local _orig_global_sig = vim.lsp.handlers[ms.textDocument_signatureHelp]
+vim.lsp.handlers[ms.textDocument_signatureHelp] = function(err, result, ctx, config)
+  config = config or {}
+  -- Default rounded border; users can still override by setting a border upstream
+  if config.border == nil then
+    config.border = "rounded"
+  end
+  -- Never move focus into the float; also keep it not focusable
+  if config.focus == nil then
+    config.focus = false
+  end
+  if config.focusable == nil then
+    config.focusable = false
+  end
+  -- Show concise signature index like "1/3" when multiple signatures exist
+  if result and result.signatures and #result.signatures > 0 then
+    local total = #result.signatures
+    local idx = (result.activeSignature or 0) + 1
+    if total > 1 then
+      config.title = string.format("%d/%d", idx, total)
+    else
+      -- No title for single signature to reduce noise
+      config.title = nil
+    end
+  end
+  return _orig_global_sig(err, result, ctx, config)
+end
+
 local function filter_one_or_many(response, filter)
   if #response == 0 then
     return filter(response)
