@@ -199,26 +199,65 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
   do
     -- one augroup per main buffer so we can clear it on deactivate
     local sig_grp = vim.api.nvim_create_augroup("OtterSignature" .. main_nr, { clear = true })
+    -- track whether we're in a python function argument list
+    local arglist_active = false
     vim.api.nvim_create_autocmd("InsertCharPre", {
       group = sig_grp,
       buffer = main_nr,
       callback = function(ev)
         -- character about to be inserted
         local ch = (ev and ev.char) or vim.v.char or ""
-        if ch == "(" or ch == "," then
-          -- trigger after the character has been inserted so positions match
-          vim.defer_fn(function()
-            if vim.api.nvim_get_current_buf() == main_nr then
-              -- only trigger inside a code chunk
-              local lang = keeper.get_current_language_context(main_nr)
-              if lang ~= nil then
+
+        -- always end arglist on ')'
+        if ch == ")" then
+          arglist_active = false
+          return
+        end
+
+        -- only operate inside python code chunks
+        local lang = keeper.get_current_language_context(main_nr)
+        if lang ~= "python" then
+          return
+        end
+
+        if ch == "(" then
+          -- only trigger if previous character is [A-Za-z0-9_]
+          local _, col = unpack(vim.api.nvim_win_get_cursor(0))
+          if col > 0 then
+            local line = vim.api.nvim_get_current_line()
+            local prev = line:sub(col, col)
+            if prev:match("[%w_]") then
+              -- trigger after the character has been inserted so positions match
+              vim.defer_fn(function()
+                if vim.api.nvim_get_current_buf() == main_nr then
+                  pcall(vim.lsp.buf.signature_help)
+                  arglist_active = true
+                end
+              end, 40)
+            end
+          end
+        elseif ch == "," then
+          -- only trigger comma if we previously opened with '('
+          if arglist_active then
+            vim.defer_fn(function()
+              if vim.api.nvim_get_current_buf() == main_nr then
                 pcall(vim.lsp.buf.signature_help)
               end
-            end
-          end, 40)
+            end, 40)
+          end
         end
       end,
       desc = "[otter] auto signatureHelp for embedded language chunks",
+    })
+
+    -- reset arglist state on leaving insert mode
+    vim.api.nvim_create_autocmd("InsertLeave", {
+      group = sig_grp,
+      buffer = main_nr,
+      callback = function()
+        arglist_active = false
+      end,
+      desc = "[otter] reset signature state on InsertLeave",
     })
 
     -- trigger when completion selection changes (cmp or native)
@@ -229,9 +268,8 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         -- schedule to avoid firing while pumvisible busy
         vim.defer_fn(function()
           if vim.api.nvim_get_current_buf() == main_nr and vim.fn.pumvisible() == 1 then
-            -- only trigger inside a code chunk
             local lang = keeper.get_current_language_context(main_nr)
-            if lang ~= nil then
+            if lang == "python" and arglist_active then
               pcall(vim.lsp.buf.signature_help)
             end
           end
