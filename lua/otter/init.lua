@@ -199,8 +199,8 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
   do
     -- one augroup per main buffer so we can clear it on deactivate
     local sig_grp = vim.api.nvim_create_augroup("OtterSignature" .. main_nr, { clear = true })
-    -- track whether we're in a python function argument list (supports nesting)
-    local arglist_depth = 0
+    -- track whether we're in a python function argument list
+    local arglist_active = false
     vim.api.nvim_create_autocmd("InsertCharPre", {
       group = sig_grp,
       buffer = main_nr,
@@ -208,62 +208,42 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         -- character about to be inserted
         local ch = (ev and ev.char) or vim.v.char or ""
 
-        -- handle relevant characters only; avoid unnecessary parsing for others
+        -- always end arglist on ')'
         if ch == ")" then
-          if arglist_depth > 0 then
-            arglist_depth = arglist_depth - 1
-          end
+          arglist_active = false
           return
-        elseif ch == "(" then
-          -- trigger after the character has been inserted so positions match
-          vim.defer_fn(function()
-            if vim.api.nvim_get_current_buf() ~= main_nr then
-              return
+        end
+
+        -- only operate inside python code chunks
+        local lang = keeper.get_current_language_context(main_nr)
+        if lang ~= "python" then
+          return
+        end
+
+        if ch == "(" then
+          -- only trigger if previous character is [A-Za-z0-9_]
+          local _, col = unpack(vim.api.nvim_win_get_cursor(0))
+          if col > 0 then
+            local line = vim.api.nvim_get_current_line()
+            local prev = line:sub(col, col)
+            if prev:match("[%w_]") then
+              -- trigger after the character has been inserted so positions match
+              vim.defer_fn(function()
+                if vim.api.nvim_get_current_buf() == main_nr then
+                  pcall(vim.lsp.buf.signature_help)
+                  arglist_active = true
+                end
+              end, 40)
             end
-            local lang = keeper.get_current_language_context(main_nr)
-            if lang == nil then
-              return
-            end
-            if arglist_depth > 0 then
-              -- nested paren inside existing args
-              arglist_depth = arglist_depth + 1
-              return
-            end
-            -- only start arglist if previous character is [A-Za-z0-9_]
-            local _, col = unpack(vim.api.nvim_win_get_cursor(0))
-            if col > 0 then
-              local line = vim.api.nvim_get_current_line()
-              local prev = line:sub(col, col)
-              if prev:match("[%w_]") then
-                pcall(vim.lsp.buf.signature_help)
-                arglist_depth = 1
-              end
-            end
-          end, 40)
+          end
         elseif ch == "," then
-          if arglist_depth > 0 then
+          -- only trigger comma if we previously opened with '('
+          if arglist_active then
             vim.defer_fn(function()
-              if vim.api.nvim_get_current_buf() ~= main_nr then
-                return
-              end
-              local lang = keeper.get_current_language_context(main_nr)
-              if lang ~= nil and arglist_depth > 0 then
+              if vim.api.nvim_get_current_buf() == main_nr then
                 pcall(vim.lsp.buf.signature_help)
               end
             end, 40)
-          end
-        elseif ch == " " then
-          -- keep signature visible after typing a space in arglists (", ")
-          if arglist_depth > 0 then
-            vim.defer_fn(function()
-              if vim.api.nvim_get_current_buf() ~= main_nr then
-                return
-              end
-              local lang = keeper.get_current_language_context(main_nr)
-              if lang ~= nil and arglist_depth > 0 then
-                pcall(vim.lsp.buf.signature_help)
-              end
-            end, 60)
           end
         end
       end,
@@ -275,7 +255,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       group = sig_grp,
       buffer = main_nr,
       callback = function()
-        arglist_depth = 0
+        arglist_active = false
       end,
       desc = "[otter] reset signature state on InsertLeave",
     })
@@ -289,7 +269,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         vim.defer_fn(function()
           if vim.api.nvim_get_current_buf() == main_nr and vim.fn.pumvisible() == 1 then
             local lang = keeper.get_current_language_context(main_nr)
-            if lang ~= nil and arglist_depth > 0 then
+            if lang == "python" and arglist_active then
               pcall(vim.lsp.buf.signature_help)
             end
           end
