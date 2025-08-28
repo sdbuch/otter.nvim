@@ -209,7 +209,11 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
           -- trigger after the character has been inserted so positions match
           vim.defer_fn(function()
             if vim.api.nvim_get_current_buf() == main_nr then
-              pcall(vim.lsp.buf.signature_help)
+              -- only trigger inside a code chunk
+              local lang = keeper.get_current_language_context(main_nr)
+              if lang ~= nil then
+                pcall(vim.lsp.buf.signature_help)
+              end
             end
           end, 40)
         end
@@ -225,7 +229,11 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         -- schedule to avoid firing while pumvisible busy
         vim.defer_fn(function()
           if vim.api.nvim_get_current_buf() == main_nr and vim.fn.pumvisible() == 1 then
-            pcall(vim.lsp.buf.signature_help)
+            -- only trigger inside a code chunk
+            local lang = keeper.get_current_language_context(main_nr)
+            if lang ~= nil then
+              pcall(vim.lsp.buf.signature_help)
+            end
           end
         end, 40)
       end,
