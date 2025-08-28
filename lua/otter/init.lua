@@ -221,7 +221,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
               return
             end
             local lang = keeper.get_current_language_context(main_nr)
-            if lang ~= "python" then
+            if lang == nil then
               return
             end
             if arglist_depth > 0 then
@@ -247,7 +247,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
                 return
               end
               local lang = keeper.get_current_language_context(main_nr)
-              if lang == "python" and arglist_depth > 0 then
+              if lang ~= nil and arglist_depth > 0 then
                 pcall(vim.lsp.buf.signature_help)
               end
             end, 40)
@@ -260,7 +260,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
                 return
               end
               local lang = keeper.get_current_language_context(main_nr)
-              if lang == "python" and arglist_depth > 0 then
+              if lang ~= nil and arglist_depth > 0 then
                 pcall(vim.lsp.buf.signature_help)
               end
             end, 60)
@@ -289,7 +289,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
         vim.defer_fn(function()
           if vim.api.nvim_get_current_buf() == main_nr and vim.fn.pumvisible() == 1 then
             local lang = keeper.get_current_language_context(main_nr)
-            if lang == "python" and arglist_depth > 0 then
+            if lang ~= nil and arglist_depth > 0 then
               pcall(vim.lsp.buf.signature_help)
             end
           end
