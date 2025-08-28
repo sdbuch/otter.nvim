@@ -201,6 +201,30 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
     local sig_grp = vim.api.nvim_create_augroup("OtterSignature" .. main_nr, { clear = true })
     -- track whether we're in a python function argument list (supports nesting)
     local arglist_depth = 0
+    -- debounce timer for signature help to avoid UI flicker/highlight issues
+    local uv = vim.uv or vim.loop
+    local sig_timer = nil
+
+    local function cancel_sig_timer()
+      if sig_timer ~= nil then
+        pcall(sig_timer.stop, sig_timer)
+        pcall(sig_timer.close, sig_timer)
+        sig_timer = nil
+      end
+    end
+
+    local function schedule_signature(delay_ms)
+      cancel_sig_timer()
+      sig_timer = uv.new_timer()
+      sig_timer:start(delay_ms or 60, 0, function()
+        vim.schedule(function()
+          if vim.api.nvim_get_current_buf() == main_nr then
+            pcall(vim.lsp.buf.signature_help)
+          end
+        end)
+        cancel_sig_timer()
+      end)
+    end
     vim.api.nvim_create_autocmd("InsertCharPre", {
       group = sig_grp,
       buffer = main_nr,
@@ -215,41 +239,48 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
           end
           return
         elseif ch == "(" then
-          -- determine language only when needed
-          local lang = keeper.get_current_language_context(main_nr)
-          if lang ~= "python" then
-            return
-          end
-          if arglist_depth > 0 then
-            -- nested paren inside existing args
-            arglist_depth = arglist_depth + 1
-            return
-          end
-          -- only start arglist if previous character is [A-Za-z0-9_]
-          local _, col = unpack(vim.api.nvim_win_get_cursor(0))
-          if col > 0 then
-            local line = vim.api.nvim_get_current_line()
-            local prev = line:sub(col, col)
-            if prev:match("[%w_]") then
-              vim.defer_fn(function()
-                if vim.api.nvim_get_current_buf() == main_nr then
-                  pcall(vim.lsp.buf.signature_help)
-                  arglist_depth = 1
-                end
-              end, 40)
+          -- defer the heavier checks to avoid stepping on other InsertCharPre UX (e.g., math highlighting)
+          vim.defer_fn(function()
+            -- determine language only when needed
+            local lang = keeper.get_current_language_context(main_nr)
+            if lang ~= "python" then
+              return
             end
-          end
+            if arglist_depth > 0 then
+              -- nested paren inside existing args
+              arglist_depth = arglist_depth + 1
+              return
+            end
+            -- only start arglist if previous character is [A-Za-z0-9_]
+            local _, col = unpack(vim.api.nvim_win_get_cursor(0))
+            if col > 0 then
+              local line = vim.api.nvim_get_current_line()
+              local prev = line:sub(col, col)
+              if prev:match("[%w_]") then
+                arglist_depth = 1
+                schedule_signature(80)
+              end
+            end
+          end, 10)
         elseif ch == "," then
           if arglist_depth > 0 then
-            -- still ensure we're in python before triggering
-            local lang = keeper.get_current_language_context(main_nr)
-            if lang == "python" then
-              vim.defer_fn(function()
-                if vim.api.nvim_get_current_buf() == main_nr then
-                  pcall(vim.lsp.buf.signature_help)
-                end
-              end, 40)
-            end
+            -- still ensure we're in python before triggering (deferred)
+            vim.defer_fn(function()
+              local lang = keeper.get_current_language_context(main_nr)
+              if lang == "python" and arglist_depth > 0 then
+                schedule_signature(80)
+              end
+            end, 10)
+          end
+        elseif ch == " " then
+          -- keep signature visible after typing a space in arglists (", ")
+          if arglist_depth > 0 then
+            vim.defer_fn(function()
+              local lang = keeper.get_current_language_context(main_nr)
+              if lang == "python" and arglist_depth > 0 then
+                schedule_signature(100)
+              end
+            end, 10)
           end
         end
       end,
@@ -262,6 +293,7 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
       buffer = main_nr,
       callback = function()
         arglist_depth = 0
+        cancel_sig_timer()
       end,
       desc = "[otter] reset signature state on InsertLeave",
     })
@@ -276,10 +308,10 @@ M.activate = function(languages, completion, diagnostics, tsquery, preambles, po
           if vim.api.nvim_get_current_buf() == main_nr and vim.fn.pumvisible() == 1 then
             local lang = keeper.get_current_language_context(main_nr)
             if lang == "python" and arglist_depth > 0 then
-              pcall(vim.lsp.buf.signature_help)
+              schedule_signature(80)
             end
           end
-        end, 40)
+        end, 20)
       end,
       desc = "[otter] refresh signatureHelp on completion item change",
     })
