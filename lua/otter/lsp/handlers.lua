@@ -9,66 +9,34 @@ local ms = vim.lsp.protocol.Methods
 local modify_position = require("otter.keeper").modify_position
 
 -- Add a pretty UI for signature help globally (border + non-focusing + compact title)
--- Implement a custom handler that mirrors the builtin behaviour but customizes
--- the window UI and header rendering.
-local util = require("vim.lsp.util")
-local api = vim.api
+-- Wrap whatever handler is currently installed so we don't fight user configs
 local _orig_global_sig = vim.lsp.handlers[ms.textDocument_signatureHelp]
-vim.lsp.handlers[ms.textDocument_signatureHelp] = function(_, result, ctx, config)
+vim.lsp.handlers[ms.textDocument_signatureHelp] = function(err, result, ctx, config)
   config = config or {}
-  config.focus_id = ctx.method
-  if api.nvim_get_current_buf() ~= ctx.bufnr then
-    return
-  end
-  if not (result and result.signatures and result.signatures[1]) then
-    if config.silent ~= true then
-      print('No signature help available')
-    end
-    return
-  end
-
-  -- Decide compact title and remove the markdown header from contents
-  local client = assert(vim.lsp.get_client_by_id(ctx.client_id))
-  local triggers = vim.tbl_get(client.server_capabilities, 'signatureHelpProvider', 'triggerCharacters')
-  local ft = vim.bo[ctx.bufnr].filetype
-  local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
-  if not lines or vim.tbl_isempty(lines) then
-    if config.silent ~= true then
-      print('No signature help available')
-    end
-    return
-  end
-
-  -- Strip the leading markdown header like "# Signature Help: ..."
-  if #lines > 0 and lines[1]:match('^#%s+Signature Help:') then
-    table.remove(lines, 1)
-  end
-
-  -- UI options: rounded border and no focus grabbing
+  -- Default rounded border; users can still override by setting a border upstream
   if config.border == nil then
-    config.border = 'rounded'
+    config.border = "rounded"
   end
+  -- Never move focus into the float; also keep it not focusable
   if config.focus == nil then
     config.focus = false
   end
   if config.focusable == nil then
     config.focusable = false
   end
-
-  local total = #result.signatures
-  local idx = (result.activeSignature or 0) + 1
-  if total > 1 then
-    config.title = string.format('%d/%d (<C-s> to cycle)', idx, total)
-  else
-    config.title = nil
+  -- Show concise signature index like "1/3" when multiple signatures exist
+  if result and result.signatures and #result.signatures > 0 then
+    local total = #result.signatures
+    local idx = (result.activeSignature or 0) + 1
+    if total > 1 then
+      -- Include a short hint on how to cycle between overloads
+      config.title = string.format("%d/%d (<C-s> to cycle)", idx, total)
+    else
+      -- No title for single signature to reduce noise
+      config.title = nil
+    end
   end
-
-  local fbuf, fwin = util.open_floating_preview(lines, 'markdown', config)
-  if hl then
-    local ns = api.nvim_create_namespace('otter.signature_help')
-    vim.hl.range(fbuf, ns, 'LspSignatureActiveParameter', { hl[1], hl[2] }, { hl[3], hl[4] })
-  end
-  return fbuf, fwin
+  return _orig_global_sig(err, result, ctx, config)
 end
 
 local function filter_one_or_many(response, filter)
