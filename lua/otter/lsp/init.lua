@@ -26,6 +26,54 @@ otterls.start = function(main_nr, completion)
   local client_id = vim.lsp.start({
     name = "otter-ls" .. "[" .. main_nr .. "]",
     capabilities = capabilities,
+    handlers = (function()
+      local util = require("vim.lsp.util")
+      local api = vim.api
+      local function pretty_signature(_, result, ctx, config)
+        config = config or {}
+        config.focus_id = ctx.method
+        if api.nvim_get_current_buf() ~= ctx.bufnr then
+          return
+        end
+        if not (result and result.signatures and result.signatures[1]) then
+          if config.silent ~= true then
+            print("No signature help available")
+          end
+          return
+        end
+
+        local client = assert(vim.lsp.get_client_by_id(ctx.client_id))
+        local triggers = vim.tbl_get(client.server_capabilities, 'signatureHelpProvider', 'triggerCharacters')
+        local ft = vim.bo[ctx.bufnr].filetype
+        local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
+        if not lines or vim.tbl_isempty(lines) then
+          if config.silent ~= true then
+            print('No signature help available')
+          end
+          return
+        end
+        if #lines > 0 and lines[1]:match('^#%s+Signature Help:') then
+          table.remove(lines, 1)
+        end
+        if config.border == nil then config.border = 'rounded' end
+        if config.focus == nil then config.focus = false end
+        if config.focusable == nil then config.focusable = false end
+        local total = #result.signatures
+        local idx = (result.activeSignature or 0) + 1
+        if total > 1 then
+          config.title = string.format('%d/%d (<C-s> to cycle)', idx, total)
+        else
+          config.title = nil
+        end
+        local fbuf, fwin = util.open_floating_preview(lines, 'markdown', config)
+        if hl then
+          local ns = api.nvim_create_namespace('otter.signature_help')
+          vim.hl.range(fbuf, ns, 'LspSignatureActiveParameter', { hl[1], hl[2] }, { hl[3], hl[4] })
+        end
+        return fbuf, fwin
+      end
+      return { [ms.textDocument_signatureHelp] = pretty_signature }
+    end)(),
     cmd = function(dispatchers)
       local _ = dispatchers
       local members = {
