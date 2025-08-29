@@ -29,8 +29,7 @@ vim.lsp.handlers[ms.textDocument_signatureHelp] = function(err, result, ctx, con
     local total = #result.signatures
     local idx = (result.activeSignature or 0) + 1
     if total > 1 then
-      -- Include a short hint on how to cycle between overloads
-      config.title = string.format("%d/%d (<C-s> to cycle)", idx, total)
+      config.title = string.format("%d/%d", idx, total)
     else
       -- No title for single signature to reduce noise
       config.title = nil
